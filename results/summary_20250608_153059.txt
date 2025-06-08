@@ -1,0 +1,60 @@
+K-Means Clustering Benchmark Summary
+============================================================
+Total experiments: 1008
+Timestamp: 2025-06-08 15:30:59
+
+
+PYTHON Implementation:
+----------------------------------------
+Performance Metrics:
+  Average runtime: 36.323 seconds
+  Average memory: 255.6 MB
+  Average CPU usage: 71.7%
+  Max CPU usage: 134.0%
+
+Clustering Quality Metrics:
+  Average inertia: 403492006.26
+  Average silhouette score: 0.638
+  Average Davies-Bouldin index: 1.832
+  Average Calinski-Harabasz index: 608584.84
+
+SKLEARN Implementation:
+----------------------------------------
+Performance Metrics:
+  Average runtime: 10.492 seconds
+  Average memory: 280.7 MB
+  Average CPU usage: 141.1%
+  Max CPU usage: 513.3%
+
+Clustering Quality Metrics:
+  Average inertia: 289103.44
+  Average silhouette score: 0.935
+  Average Davies-Bouldin index: 0.092
+  Average Calinski-Harabasz index: 8684041.18
+
+RUST Implementation:
+----------------------------------------
+Performance Metrics:
+  Average runtime: 7.027 seconds
+  Average memory: 23.3 MB
+  Average CPU usage: 80.5%
+  Max CPU usage: 111.1%
+
+Clustering Quality Metrics:
+  Average inertia: 382864383.45
+  Average silhouette score: 0.619
+  Average Davies-Bouldin index: 1.956
+  Average Calinski-Harabasz index: 432726.07
+
+
+COMPARISON SUMMARY
+============================================================
+
+Speedup relative to Python implementation:
+  SKLEARN: 3.46x faster
+  RUST: 5.17x faster
+
+Memory efficiency (MB per 1000 samples):
+  PYTHON: 25.18 MB/1k samples
+  SKLEARN: 47.88 MB/1k samples
+  RUST: 0.83 MB/1k samples
