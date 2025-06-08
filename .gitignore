@@ -1,5 +1,7 @@
 # Data
-/data/
+data/*
+results/*.csv
+results/*.txt
 
 # Mac OS-specific storage files
 .DS_Store

@@ -1,17 +1,51 @@
 [workspace]
-channels = ["conda-forge"]
-name = "pythonvsrust-kmeans"
+channels  = ["conda-forge"]
+name      = "pythonvsrust-kmeans"
 platforms = ["osx-arm64"]
-version = "0.1.0"
+version   = "0.1.0"
 
 [tasks]
+# Data generation tasks
+generate-data   = "python src/generate_data.py"
+generate-small  = "python src/generate_data.py --n_samples 1000   --n_features 2  --n_clusters 4"
+generate-medium = "python src/generate_data.py --n_samples 8000   --n_features 8  --n_clusters 16"
+generate-large  = "python src/generate_data.py --n_samples 128000 --n_features 32 --n_clusters 64"
+
+# Build tasks
+build-rust       = { cmd = "cargo build --release", cwd = "src/rust_impl" }
+build-rust-debug = { cmd = "cargo build", cwd = "src/rust_impl" }
+
+# Individual implementation tests
+test-python = "python src/python_impl/kmeans.py --input data/dataset_n1000_f8_c4_*.csv --output ../../results/python_test.csv --k_clusters_max 5"
+
+test-rust = { 
+    cmd = "./target/release/rust_impl --input ../../data/dataset_n1000_f8_c4_*.csv --output ../../results/rust_test.csv --k_clusters_max 5", 
+    cwd = "src/rust_impl" 
+    }
+
+test-sklearn = "python src/sklearn_impl/kmeans.py data/dataset_n1000_f8_c4_*.csv --output ../../results/sklearn_test.csv --k_clusters_max 5"
+
+# Benchmark tasks
+benchmark       = "python runner.py"
+benchmark-quick = "python runner.py --quick"
+benchmark-full  = "python runner.py"
+
+# Full pipeline tasks
+run-all       = { depends_on = ["build-rust", "generate-data", "benchmark"] }
+run-quick     = { depends_on = ["build-rust", "generate-small", "benchmark-quick"] }
+
+# Utility tasks
+clean-data    = "rm -rf data/*.csv data/*.npy"
+clean-results = "rm -rf results/*.csv results/*.png"
+clean-all     = { depends_on = ["clean-data", "clean-results"] }
 
 [dependencies]
-python = "3.11.*"
-pandas = ">=2.2.3,<3"
-numpy = ">=2.2.6,<3"
-scipy = ">=1.15.2,<2"
-matplotlib = ">=3.10.3,<4"
+python       = "3.11.*"
+pandas       = ">=2.2.3,<3"
+numpy        = ">=2.2.6,<3"
+scipy        = ">=1.15.2,<2"
+matplotlib   = ">=3.10.3,<4"
 scikit-learn = ">=1.6.1,<2"
-rust = ">=1.87.0,<1.88"
-psutil = ">=7.0.0,<8"
+rust         = ">=1.87.0,<1.88"
+psutil       = ">=7.0.0,<8"
+seaborn      = ">=0.13.2,<0.14"
