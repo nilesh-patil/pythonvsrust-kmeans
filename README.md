@@ -4,7 +4,7 @@ A comparative study of K-Means clustering implementations written in pure Python
 The repository is structured so that you can generate synthetic data, run each implementation under identical scenarios, capture execution metrics and visualise the results.
 
 
-![Python vs Scikit Learn ( Python ) vs Rust](./results/benchmark_plots_20250608_153102.png "Title")
+![Python vs Scikit Learn ( Python ) vs Rust](./results/analysis.png "Title")
 
 ---
 
