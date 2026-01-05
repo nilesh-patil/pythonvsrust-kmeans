@@ -1,0 +1,17 @@
+[workspace]
+channels = ["conda-forge"]
+name = "pythonvsrust-kmeans"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.11.*"
+pandas = ">=2.2.3,<3"
+numpy = ">=2.2.6,<3"
+scipy = ">=1.15.2,<2"
+matplotlib = ">=3.10.3,<4"
+scikit-learn = ">=1.6.1,<2"
+rust = ">=1.87.0,<1.88"
+psutil = ">=7.0.0,<8"
