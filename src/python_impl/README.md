@@ -59,11 +59,20 @@ ID,feature1,feature2,feature3,cluster_1,cluster_2,cluster_3
 
 The k-means implementation includes:
 
-1. **Initialization**: Random placement of initial centroids
+1. **Initialization**: Random or k-means++ placement of initial centroids (see `--init`)
 2. **Assignment Step**: Assign each point to the nearest centroid
 3. **Update Step**: Recalculate centroids based on assigned points
 4. **Convergence Check**: Repeat until centroids stabilize or max iterations reached
 5. **Output Generation**: Save results with cluster assignments
+
+### Initialization methods
+
+| `--init` value | Description |
+|---|---|
+| `random` (default) | Sample `k` data points uniformly at random without replacement. Preserves existing benchmark baselines. |
+| `k-means++` | Arthur & Vassilvitskii (2007) D² weighted sampling. Picks the first centroid uniformly, then each subsequent centroid proportional to squared Euclidean distance to the nearest already-chosen centroid. Typically converges faster and to lower inertia than random initialization. |
+
+The `random_state` parameter seeds a `numpy.random.RandomState` instance for both methods, so runs are fully reproducible and do not affect global NumPy RNG state.
 
 ## Usage
 
@@ -79,6 +88,11 @@ The k-means implementation includes:
    Optional parameters:
    ```bash
    python kmeans.py --input="data.csv" --output="results.csv" --k_clusters_max="10" --id_column="ID" --random_state="42"
+   ```
+
+   Use k-means++ initialization (Arthur & Vassilvitskii 2007) for better centroid seeding:
+   ```bash
+   python kmeans.py --input="data.csv" --output="results.csv" --k_clusters_max="10" --init="k-means++"
    ```
 
 ## Features

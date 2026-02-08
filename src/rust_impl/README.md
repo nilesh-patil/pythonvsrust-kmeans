@@ -4,15 +4,15 @@ This directory contains a native Rust implementation of the k-means clustering a
 
 ## Overview
 
-The `main.rs` file implements k-means clustering from scratch using only standard Rust libraries and minimal external crates for CSV handling and numerical computations. This implementation provides a clear understanding of how the k-means algorithm works under the hood, with the performance benefits and memory safety guarantees of Rust.
+The library (`src/lib.rs`) implements k-means clustering from scratch using only standard Rust libraries and minimal external crates for CSV handling and numerical computations. The binary (`src/main.rs`) provides a CLI wrapper. This implementation provides a clear understanding of how the k-means algorithm works under the hood, with the performance benefits and memory safety guarantees of Rust.
 
 ## File Description
 
-### `main.rs`
-- **Purpose**: Implements k-means clustering algorithm in pure Rust
-- **Dependencies**: Only standard Rust library and minimal crates (csv for file I/O, no ML frameworks)
-- **Input**: CSV file with features and unique ID column
-- **Output**: CSV file with cluster assignments
+### `src/lib.rs`
+- **Purpose**: Core KMeans struct, DataPoint, and InitMethod types — importable as a library and tested in-process.
+
+### `src/main.rs`
+- **Purpose**: CLI binary; parses arguments, loads CSV, runs clustering, writes output.
 
 ## Configuration
 
@@ -60,8 +60,8 @@ ID,feature1,feature2,feature3,cluster_1,cluster_2,cluster_3
 
 The k-means implementation includes:
 
-1. **Initialization**: Random placement of initial centroids using Rust's thread-safe RNG
-2. **Assignment Step**: Assign each point to the nearest centroid using efficient distance calculations
+1. **Initialization**: Random or k-means++ centroid initialization (see `--init` below)
+2. **Assignment Step**: Assign each point to the nearest centroid using Euclidean distance
 3. **Update Step**: Recalculate centroids based on assigned points
 4. **Convergence Check**: Repeat until centroids stabilize or max iterations reached
 5. **Output Generation**: Save results with cluster assignments
@@ -80,7 +80,12 @@ The k-means implementation includes:
 
    With optional parameters:
    ```bash
-   cargo run --release -- --input="data.csv" --output="results.csv" --k-clusters-max=10 --id-column="ID" --random-seed=42
+   cargo run --release -- --input="data.csv" --output="results.csv" --k-clusters-max=10 --id-column="ID" --random-state=42
+   ```
+
+   Using k-means++ initialization:
+   ```bash
+   cargo run --release -- --input="data.csv" --output="results.csv" --k-clusters-max=10 --random-state=42 --init="k-means++"
    ```
 
 ## Command Line Arguments
@@ -88,24 +93,32 @@ The k-means implementation includes:
 - `--input`: Path to input CSV file (required)
 - `--output`: Path to output CSV file (required)
 - `--k-clusters-max`: Maximum number of clusters to compute (required)
-- `--id-column`: Name of the ID column (optional, default: "ID")
-- `--random-seed`: Seed for random number generation (optional)
-- `--max-iterations`: Maximum iterations per k-means run (optional, default: 300)
+- `--id-column`: Name of the ID column (optional, default: `"ID"`)
+- `--random-state`: Seed for random number generation (optional, default: `42`)
+- `--max-iterations`: Maximum iterations per k-means run (optional, default: `300`)
+- `--init`: Centroid initialization method — `random` (default) or `k-means++` (optional)
+
+### `--init` details
+
+| Value | Behaviour |
+|-------|-----------|
+| `random` | Uniform random sample of k points — original behaviour, fully reproducible with `--random-state`. |
+| `k-means++` | Arthur-Vassilvitskii 2007 D² weighted sampling. First centroid is chosen uniformly; each successive centroid is sampled with probability proportional to its squared distance to the nearest already-chosen centroid. Typically converges to lower inertia than random init, especially on well-separated clusters. |
+
+Using `--init random` (the default) produces **identical results** to the pre-feature-1 binary for any given `--random-state` value.
 
 ## Features
 
 - **Pure Rust**: No external ML libraries required
 - **High Performance**: Leverages Rust's zero-cost abstractions and efficient memory management
 - **Memory Safe**: Guaranteed memory safety without garbage collection overhead
-- **Parallel Processing**: Can leverage Rust's fearless concurrency for parallel computations
 - **Type Safe**: Strong typing prevents runtime errors common in dynamic languages
 - **CSV Compatible**: Works with standard CSV format using the `csv` crate
 - **Configurable**: Command-line interface for easy parameter adjustment
 - **ID Preservation**: Maintains original row identifiers
+- **Library + Binary**: Core logic lives in `lib.rs`; tests run against the library directly
 
 ## Dependencies
-
-Add these to your `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -117,8 +130,7 @@ rand = "0.8"
 
 ## Notes
 
-- The algorithm uses Euclidean distance for similarity measurement
-- Random initialization can be controlled with the `--random-seed` parameter for reproducible results
-- The Rust implementation offers significant performance improvements over interpreted languages, especially for large datasets
-- Memory usage is optimized through Rust's ownership system
-- Consider using the `--release` flag for optimal performance 
+- The algorithm uses Euclidean distance for cluster assignment; D² sampling in k-means++ uses squared Euclidean (no sqrt).
+- Use `--random-state` to control the seed for reproducible results.
+- The `--release` flag is recommended for optimal performance on large datasets.
+- Consider k-means++ (`--init k-means++`) when cluster quality matters more than raw throughput — it typically requires fewer EM iterations to converge.

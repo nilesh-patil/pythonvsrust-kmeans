@@ -22,6 +22,10 @@ test-rust = {  cmd = "./target/release/rust_impl --input ../../data/dataset_n100
 
 test-sklearn = "python src/sklearn_impl/kmeans.py data/dataset_n1000_f8_c4_*.csv --output ../../results/sklearn_test.csv --k_clusters_max 5"
 
+# Test tasks
+test            = "python -m pytest tests/ -v"
+test-fast       = "python -m pytest tests/ -v -x --no-header"
+
 # Benchmark tasks
 benchmark       = "python runner.py"
 benchmark-quick = "python runner.py --quick"
@@ -47,3 +51,4 @@ rust         = ">=1.87.0,<1.88"
 psutil       = ">=7.0.0,<8"
 seaborn      = ">=0.13.2,<0.14"
 jupyterlab = ">=4.4.3,<5"
+pytest     = ">=8.0,<9"

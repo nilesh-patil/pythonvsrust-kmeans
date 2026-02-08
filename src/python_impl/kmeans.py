@@ -17,19 +17,32 @@ warnings.filterwarnings('ignore')
 
 class KMeansClustering:
     """K-Means clustering implementation from scratch"""
-    
-    def __init__(self, n_clusters: int, max_iter: int = 300, random_state: Optional[int] = None):
+
+    _VALID_INIT = frozenset({"random", "k-means++"})
+
+    def __init__(
+        self,
+        n_clusters: int,
+        max_iter: int = 300,
+        random_state: Optional[int] = None,
+        init: str = "random",
+    ):
         """
         Initialize K-Means clustering
-        
+
         Args:
             n_clusters: Number of clusters
             max_iter: Maximum number of iterations
             random_state: Random seed for reproducibility
+            init: Centroid initialisation strategy — ``"random"`` (default) or
+                ``"k-means++"`` (Arthur & Vassilvitskii 2007).
         """
+        if init not in self._VALID_INIT:
+            raise ValueError(f"init must be one of {sorted(self._VALID_INIT)!r}, got {init!r}")
         self.n_clusters = n_clusters
         self.max_iter = max_iter
         self.random_state = random_state
+        self.init = init
         self.centroids = None
         self.labels = None
         
@@ -51,21 +64,84 @@ class KMeansClustering:
     
     def _initialize_centroids(self, X: np.ndarray) -> np.ndarray:
         """
-        Initialize centroids using random selection from data points
-        
+        Initialize centroids, dispatching to the method selected by ``self.init``.
+
         Args:
             X: Data points (n_samples, n_features)
-            
+
         Returns:
             Initial centroids (n_clusters, n_features)
         """
-        if self.random_state is not None:
-            np.random.seed(self.random_state)
-        
+        if self.init == "k-means++":
+            return self._initialize_centroids_kpp(X)
+        return self._initialize_centroids_random(X)
+
+    def _initialize_centroids_random(self, X: np.ndarray) -> np.ndarray:
+        """
+        Initialize centroids by sampling k points uniformly at random (without replacement).
+
+        Uses ``np.random.RandomState`` rather than the global RNG so that
+        concurrent runs with different seeds don't interfere with each other.
+
+        Args:
+            X: Data points (n_samples, n_features)
+
+        Returns:
+            Initial centroids (n_clusters, n_features)
+        """
+        rng = np.random.RandomState(self.random_state)
         n_samples = X.shape[0]
-        random_indices = np.random.choice(n_samples, self.n_clusters, replace=False)
-        centroids = X[random_indices]
-        return centroids
+        random_indices = rng.choice(n_samples, self.n_clusters, replace=False)
+        return X[random_indices]
+
+    def _initialize_centroids_kpp(self, X: np.ndarray) -> np.ndarray:
+        """
+        Initialize centroids using the Arthur & Vassilvitskii (2007) k-means++ algorithm.
+
+        Picks the first centroid uniformly at random, then iteratively selects
+        each subsequent centroid with probability proportional to the squared
+        Euclidean distance to the nearest already-chosen centroid (D² sampling).
+        Squared distances are used throughout — no sqrt is needed for the
+        probability weights, and it avoids numerical drift.
+
+        Args:
+            X: Data points (n_samples, n_features)
+
+        Returns:
+            Initial centroids (n_clusters, n_features) — each row is a point from X.
+        """
+        rng = np.random.RandomState(self.random_state)
+        n_samples = X.shape[0]
+
+        # Step 1 — pick the first centroid uniformly
+        first_idx = rng.randint(0, n_samples)
+        chosen_indices = [first_idx]
+
+        # Maintain a running vector of min-squared-distances to chosen centroids.
+        # Initialised to squared distance from every point to the first centroid.
+        diff = X - X[first_idx]
+        min_sq_dist = np.einsum("ij,ij->i", diff, diff)  # (n_samples,)
+
+        for _ in range(1, self.n_clusters):
+            # Step 2 — sample proportional to D²
+            total = min_sq_dist.sum()
+            if total == 0.0:
+                # All remaining candidate points coincide with existing centroids;
+                # fall back to uniform sampling among unchosen indices.
+                unchosen = np.setdiff1d(np.arange(n_samples), chosen_indices)
+                next_idx = int(rng.choice(unchosen))
+            else:
+                probabilities = min_sq_dist / total
+                next_idx = int(rng.choice(n_samples, p=probabilities))
+
+            chosen_indices.append(next_idx)
+
+            # Update min-squared-distance with the newly added centroid
+            diff = X - X[next_idx]
+            sq_dist_to_new = np.einsum("ij,ij->i", diff, diff)
+            np.minimum(min_sq_dist, sq_dist_to_new, out=min_sq_dist)
+
+        return X[chosen_indices]
     
     def _assign_clusters(self, X: np.ndarray, centroids: np.ndarray) -> np.ndarray:
         """
@@ -98,8 +174,13 @@ class KMeansClustering:
             if len(cluster_points) > 0:
                 centroids[k] = np.mean(cluster_points, axis=0)
             else:
-                # If no points assigned, keep the centroid as is or reinitialize
-                centroids[k] = X[np.random.choice(X.shape[0])]
+                # If no points assigned, reinitialize from a random data point.
+                # Use a fresh RandomState seeded off k so this edge-case path is
+                # still deterministic without touching the global RNG.
+                rng = np.random.RandomState(
+                    None if self.random_state is None else self.random_state + k
+                )
+                centroids[k] = X[rng.choice(X.shape[0])]
         return centroids
     
     def fit(self, X: np.ndarray) -> 'KMeansClustering':
@@ -160,7 +241,14 @@ def parse_arguments():
     parser.add_argument('--k_clusters_max', type=int, required=True, help='Number of max clusters')
     parser.add_argument('--random_state', type=int, default=42, help='Random seed')
     parser.add_argument('--id_column', type=str, default='ID', help='ID column name')
-    
+    parser.add_argument(
+        '--init',
+        type=str,
+        choices=["random", "k-means++"],
+        default="random",
+        help='Centroid initialisation method: "random" (default) or "k-means++"',
+    )
+
     return parser.parse_args()
 
 
@@ -211,26 +299,27 @@ def load_data(filepath: str, id_column: str) -> Tuple[pd.DataFrame, np.ndarray, 
     return df, X, id_df
 
 
-def run_kmeans_multiple_k(X: np.ndarray, k_max: int, random_state: int) -> dict:
+def run_kmeans_multiple_k(X: np.ndarray, k_max: int, random_state: int, init: str = "random") -> dict:
     """
-    Run k-means for multiple values of k
-    
+    Run k-means for multiple values of k.
+
     Args:
         X: Feature array
         k_max: Maximum number of clusters
         random_state: Random seed
-        
+        init: Centroid initialisation method — ``"random"`` (default) or ``"k-means++"``.
+
     Returns:
         Dictionary mapping k to cluster labels
     """
     results = {}
-    
+
     for k in range(1, min(k_max + 1, X.shape[0] + 1)):
         print(f"Running k-means with k={k}...")
-        kmeans = KMeansClustering(n_clusters=k, random_state=random_state)
+        kmeans = KMeansClustering(n_clusters=k, random_state=random_state, init=init)
         kmeans.fit(X)
         results[k] = kmeans.labels
-    
+
     return results
 
 
@@ -276,16 +365,17 @@ def main():
     print(f"Max clusters: {args.k_clusters_max}")
     print(f"ID column: {args.id_column}")
     print(f"Random state: {args.random_state}")
+    print(f"Init method:  {args.init}")
     print("=" * 40)
-    
+
     # Load data
     print("\nLoading data...")
     df, X, id_df = load_data(args.input, args.id_column)
     print(f"Data shape: {X.shape[0]} samples, {X.shape[1]} features")
-    
+
     # Run k-means for multiple k values
     print(f"\nRunning k-means for k=1 to k={args.k_clusters_max}...")
-    results = run_kmeans_multiple_k(X, args.k_clusters_max, args.random_state)
+    results = run_kmeans_multiple_k(X, args.k_clusters_max, args.random_state, init=args.init)
     
     # Save results
     print("\nSaving results...")
