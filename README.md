@@ -6,6 +6,22 @@ The repository is structured so that you can generate synthetic data, run each i
 
 ![Python vs Scikit Learn ( Python ) vs Rust](./results/analysis.png "Title")
 
+### Lloyd's iterations, animated
+
+| random init | k-means++ init | pathological random seed |
+|---|---|---|
+| ![random](./results/animations/convergence_random.gif) | ![k-means++](./results/animations/convergence_kpp.gif) | ![pathological](./results/animations/convergence_pathological.gif) |
+
+Random init converges slowly when two centroids start in the same blob (right). k-means++ usually picks one centroid per blob on the first try (middle), converging in 2–3 iterations.
+
+### k-means++ vs random initialization
+
+![init comparison](./results/init_comparison.png)
+
+### Parallel Rust K-Means (Rayon)
+
+![parallel scaling](./results/parallel_scaling.png)
+
 ---
 
 ## 📁 Directory structure
