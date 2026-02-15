@@ -1,5 +1,6 @@
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::prelude::*;
+use rayon::prelude::*;
 
 /// Represents a data point with features.
 #[derive(Debug, Clone)]
@@ -25,6 +26,8 @@ pub struct KMeans {
     pub labels: Vec<usize>,
     pub(crate) rng: StdRng,
     init: InitMethod,
+    /// When true, assignment and update steps use rayon data-parallelism.
+    parallel: bool,
 }
 
 impl KMeans {
@@ -40,7 +43,16 @@ impl KMeans {
             labels: Vec::new(),
             rng: StdRng::seed_from_u64(seed),
             init,
+            parallel: false,
         }
+    }
+
+    /// Builder method: enable or disable the rayon parallel path.
+    ///
+    /// Returns `self` so it chains after `new` / `with_init`.
+    pub fn with_parallel(mut self, parallel: bool) -> Self {
+        self.parallel = parallel;
+        self
     }
 
     /// Squared Euclidean distance — no sqrt required for D² sampling or convergence checks.
@@ -179,6 +191,83 @@ impl KMeans {
         old_centroids == self.centroids
     }
 
+    /// Parallel assignment: each point independently mapped to its nearest centroid.
+    ///
+    /// The centroids slice is read-only during this step, so rayon workers share
+    /// it without any synchronization overhead.
+    fn assign_clusters_parallel(&self, data: &[DataPoint]) -> Vec<usize> {
+        let centroids = &self.centroids;
+        data.par_iter()
+            .map(|point| {
+                let mut min_dist = f64::INFINITY;
+                let mut best = 0usize;
+                for (idx, centroid) in centroids.iter().enumerate() {
+                    let d = Self::euclidean_distance(&point.features, centroid);
+                    if d < min_dist {
+                        min_dist = d;
+                        best = idx;
+                    }
+                }
+                best
+            })
+            .collect()
+    }
+
+    /// Parallel centroid update: per-thread accumulators, then reduce across threads.
+    ///
+    /// Each rayon worker independently accumulates partial (sum, count) pairs for
+    /// every cluster — one `Vec<(Vec<f64>, usize)>` per thread — avoiding any
+    /// contention on shared buffers.  The `reduce` step merges the per-thread
+    /// accumulators by element-wise summation.
+    ///
+    /// Returns `true` when no centroid moved (convergence).
+    fn update_centroids_parallel(&mut self, data: &[DataPoint]) -> bool {
+        let old_centroids = self.centroids.clone();
+        let k = self.k;
+        let n_features = data[0].features.len();
+        let labels = &self.labels;
+
+        // Accumulator type: Vec<(sum: Vec<f64>, count: usize)>, one entry per cluster.
+        let zero_acc = || -> Vec<(Vec<f64>, usize)> {
+            (0..k).map(|_| (vec![0.0f64; n_features], 0usize)).collect()
+        };
+
+        let merged = data
+            .par_iter()
+            .zip(labels.par_iter())
+            .fold(zero_acc, |mut acc, (point, &label)| {
+                let (ref mut sum, ref mut count) = acc[label];
+                for (s, &v) in sum.iter_mut().zip(point.features.iter()) {
+                    *s += v;
+                }
+                *count += 1;
+                acc
+            })
+            .reduce(zero_acc, |mut a, b| {
+                for ci in 0..k {
+                    let (ref mut sa, ref mut ca) = a[ci];
+                    let (ref sb, cb) = b[ci];
+                    for (x, y) in sa.iter_mut().zip(sb.iter()) {
+                        *x += y;
+                    }
+                    *ca += cb;
+                }
+                a
+            });
+
+        for (cluster_idx, (sum, count)) in merged.into_iter().enumerate() {
+            if count > 0 {
+                self.centroids[cluster_idx] = sum.into_iter().map(|s| s / count as f64).collect();
+            } else {
+                // Empty cluster: reinitialise to a random point (same strategy as serial).
+                let random_idx = self.rng.gen_range(0..data.len());
+                self.centroids[cluster_idx] = data[random_idx].features.clone();
+            }
+        }
+
+        old_centroids == self.centroids
+    }
+
     fn calculate_mean(&self, data: &[DataPoint]) -> Vec<f64> {
         let n_features = data[0].features.len();
         let mut mean = vec![0.0; n_features];
@@ -214,11 +303,19 @@ impl KMeans {
 
         for _iter in 0..self.max_iterations {
             let old_labels = self.labels.clone();
-            self.assign_clusters(data);
+            if self.parallel {
+                self.labels = self.assign_clusters_parallel(data);
+            } else {
+                self.assign_clusters(data);
+            }
             if !old_labels.is_empty() && old_labels == self.labels {
                 break;
             }
-            let converged = self.update_centroids(data);
+            let converged = if self.parallel {
+                self.update_centroids_parallel(data)
+            } else {
+                self.update_centroids(data)
+            };
             if converged {
                 break;
             }
@@ -247,6 +344,7 @@ impl KMeans {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rayon;
 
     /// Build a DataPoint with a synthetic id.
     fn pt(id: usize, features: Vec<f64>) -> DataPoint {
@@ -337,6 +435,81 @@ mod tests {
         // So we just assert that rerunning with the same seed is stable.
         let labels_c = run(99);
         assert_eq!(labels_a, labels_c);
+    }
+
+    // -----------------------------------------------------------------------
+    // test_parallel_matches_serial_labels
+    // Same seed + same data: serial and parallel must produce identical labels.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_parallel_matches_serial_labels() {
+        let data = four_blobs();
+
+        let mut serial = KMeans::with_init(4, 300, 42, InitMethod::KMeansPlusPlus);
+        serial.fit(&data);
+
+        let mut parallel = KMeans::with_init(4, 300, 42, InitMethod::KMeansPlusPlus)
+            .with_parallel(true);
+        parallel.fit(&data);
+
+        assert_eq!(
+            serial.labels, parallel.labels,
+            "parallel labels must be identical to serial labels"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // test_parallel_matches_serial_centroids
+    // Centroids within 1e-9 of serial (float accumulation order may differ).
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_parallel_matches_serial_centroids() {
+        let data = four_blobs();
+
+        let mut serial = KMeans::with_init(4, 300, 42, InitMethod::KMeansPlusPlus);
+        serial.fit(&data);
+
+        let mut parallel = KMeans::with_init(4, 300, 42, InitMethod::KMeansPlusPlus)
+            .with_parallel(true);
+        parallel.fit(&data);
+
+        assert_eq!(serial.centroids.len(), parallel.centroids.len());
+        for (sc, pc) in serial.centroids.iter().zip(parallel.centroids.iter()) {
+            for (sv, pv) in sc.iter().zip(pc.iter()) {
+                assert!(
+                    (sv - pv).abs() < 1e-9,
+                    "centroid component differs: serial={sv} parallel={pv}"
+                );
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // test_parallel_completes_on_single_thread_pool
+    // Rayon configured with 1 thread must still produce correct labels.
+    // Uses a scoped pool so the global pool is not touched.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_parallel_completes_on_single_thread_pool() {
+        let data = four_blobs();
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+
+        let labels = pool.install(|| {
+            let mut km = KMeans::with_init(4, 300, 42, InitMethod::KMeansPlusPlus)
+                .with_parallel(true);
+            km.fit(&data);
+            km.labels.clone()
+        });
+
+        // Every label must be a valid cluster index.
+        assert_eq!(labels.len(), data.len());
+        for &l in &labels {
+            assert!(l < 4, "label {l} out of range for k=4");
+        }
     }
 
     // -----------------------------------------------------------------------

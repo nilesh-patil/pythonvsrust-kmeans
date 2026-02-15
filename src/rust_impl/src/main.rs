@@ -1,6 +1,7 @@
 use clap::Parser;
 use csv::{Reader, Writer};
 use rust_impl::{DataPoint, InitMethod, KMeans};
+use rayon;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -38,6 +39,14 @@ struct Args {
     #[arg(long, default_value = "random",
           value_parser = parse_init_method)]
     init: String,
+
+    /// Enable Rayon parallel path for assignment and centroid-update steps.
+    #[arg(long, default_value_t = false)]
+    parallel: bool,
+
+    /// Number of Rayon worker threads (0 = all available cores).
+    #[arg(long, default_value_t = 0usize)]
+    threads: usize,
 }
 
 fn parse_init_method(s: &str) -> Result<String, String> {
@@ -162,6 +171,16 @@ fn save_results(
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
+    // Configure Rayon global thread pool when --threads N > 0.
+    // Ignore the error: build_global() panics only on a second call in the same
+    // process, but returns Err when the pool was already initialised — safe to
+    // discard with let _.
+    if args.threads > 0 {
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(args.threads)
+            .build_global();
+    }
+
     println!("K-Means Clustering - Rust Implementation");
     println!("========================================");
     println!("Input file: {}", args.input);
@@ -171,6 +190,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Random state: {}", args.random_state);
     println!("Max iterations: {}", args.max_iterations);
     println!("Init method: {}", args.init);
+    println!("Parallel: {}", args.parallel);
+    if args.threads > 0 {
+        println!("Threads: {}", args.threads);
+    } else {
+        println!("Threads: {} (all cores)", rayon::current_num_threads());
+    }
     println!("========================================");
 
     println!("\nLoading data...");
@@ -182,7 +207,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     for k in 1..=args.k_clusters_max.min(data.len()) {
         println!("\nRunning k-means with k={}...", k);
         let mut kmeans =
-            KMeans::with_init(k, args.max_iterations, args.random_state, init_method.clone());
+            KMeans::with_init(k, args.max_iterations, args.random_state, init_method.clone())
+                .with_parallel(args.parallel);
         kmeans.fit(&data);
         results.insert(k, kmeans.labels);
     }

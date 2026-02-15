@@ -88,6 +88,16 @@ The k-means implementation includes:
    cargo run --release -- --input="data.csv" --output="results.csv" --k-clusters-max=10 --random-state=42 --init="k-means++"
    ```
 
+   Enabling the parallel path (all cores):
+   ```bash
+   cargo run --release -- --input="data.csv" --output="results.csv" --k-clusters-max=10 --parallel
+   ```
+
+   Enabling the parallel path with a fixed thread count:
+   ```bash
+   cargo run --release -- --input="data.csv" --output="results.csv" --k-clusters-max=10 --parallel --threads=4
+   ```
+
 ## Command Line Arguments
 
 - `--input`: Path to input CSV file (required)
@@ -97,6 +107,17 @@ The k-means implementation includes:
 - `--random-state`: Seed for random number generation (optional, default: `42`)
 - `--max-iterations`: Maximum iterations per k-means run (optional, default: `300`)
 - `--init`: Centroid initialization method — `random` (default) or `k-means++` (optional)
+- `--parallel`: Enable Rayon data-parallel assignment and centroid-update steps (optional, default: `false`)
+- `--threads N`: Pin the Rayon global thread pool to N threads (optional, default: `0` = all available cores). Has no effect when `--parallel` is not set.
+
+### `--parallel` details
+
+The parallel path is implemented with [Rayon](https://docs.rs/rayon) 1.x:
+
+- **Assignment step** (`assign_clusters_parallel`): trivially data-parallel — each point independently finds its nearest centroid via `par_iter().map(...)`. No locks; centroids are read-only during this phase.
+- **Update step** (`update_centroids_parallel`): per-thread accumulator pattern. Each Rayon worker accumulates partial `(sum: Vec<f64>, count: usize)` pairs for every cluster into its own local `Vec<(Vec<f64>, usize)>`, then a `reduce` step merges across threads by element-wise summation. This avoids all contention on shared centroid buffers.
+
+When `--parallel` is omitted (the default), the serial path runs unchanged — results are bit-identical to the pre-Feature-2 binary.
 
 ### `--init` details
 
@@ -111,6 +132,7 @@ Using `--init random` (the default) produces **identical results** to the pre-fe
 
 - **Pure Rust**: No external ML libraries required
 - **High Performance**: Leverages Rust's zero-cost abstractions and efficient memory management
+- **Parallel Processing**: Rayon-backed data-parallel assignment and per-thread-accumulator centroid update, enabled via `--parallel`. The serial path is preserved for baseline comparisons.
 - **Memory Safe**: Guaranteed memory safety without garbage collection overhead
 - **Type Safe**: Strong typing prevents runtime errors common in dynamic languages
 - **CSV Compatible**: Works with standard CSV format using the `csv` crate
@@ -126,6 +148,7 @@ csv = "1.3"
 serde = { version = "1.0", features = ["derive"] }
 clap = { version = "4.4", features = ["derive"] }
 rand = "0.8"
+rayon = "1.10"
 ```
 
 ## Notes
