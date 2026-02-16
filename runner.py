@@ -335,61 +335,85 @@ class BenchmarkRunner:
             
         return inertia
     
-    def calculate_clustering_metrics(self, dataset_path: str, results_df: pd.DataFrame, 
+    def calculate_clustering_metrics(self, dataset_path: str, results_df: pd.DataFrame,
                                    n_clusters: int) -> Dict:
         """
         Calculate comprehensive clustering quality metrics
-        
+
         Args:
             dataset_path: Path to original dataset
             results_df: DataFrame with cluster assignments
             n_clusters: Number of clusters
-            
+
         Returns:
             Dictionary with various clustering metrics
         """
-        from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-        
+        from sklearn.metrics import (
+            silhouette_score,
+            davies_bouldin_score,
+            calinski_harabasz_score,
+            adjusted_rand_score,
+            normalized_mutual_info_score,
+        )
+
         # Load original data
         data_df = pd.read_csv(dataset_path)
-        
+
         # Get feature columns
         feature_cols = [col for col in data_df.columns if col != 'ID']
         X = data_df[feature_cols].values
-        
+
         # Get cluster assignments
         cluster_col = f'cluster_{n_clusters}' if f'cluster_{n_clusters}' in results_df.columns else 'cluster'
         if cluster_col not in results_df.columns:
             return {}
-            
+
         labels = results_df[cluster_col].values
-        
+
         metrics = {}
-        
+
         try:
             # Calculate inertia
             metrics['inertia'] = self.calculate_inertia(dataset_path, results_df, n_clusters)
-            
+
             # Only calculate other metrics if we have more than one cluster
             unique_labels = np.unique(labels)
             if len(unique_labels) > 1:
                 # Silhouette Score (-1 to 1, higher is better)
                 metrics['silhouette_score'] = silhouette_score(X, labels)
-                
+
                 # Davies-Bouldin Index (lower is better)
                 metrics['davies_bouldin_index'] = davies_bouldin_score(X, labels)
-                
+
                 # Calinski-Harabasz Index (higher is better)
                 metrics['calinski_harabasz_index'] = calinski_harabasz_score(X, labels)
-                
+
             # Calculate samples per second throughput
             n_samples = len(X)
             if 'runtime' in metrics:
                 metrics['samples_per_second'] = n_samples / metrics['runtime']
-                
+
         except Exception as e:
             print(f"Warning: Error calculating clustering metrics: {e}")
-            
+
+        # External metrics — require sibling _labels.npy written by the generator.
+        # Fall back to NaN without crashing if the file is absent or malformed.
+        labels_path = Path(dataset_path).with_name(Path(dataset_path).stem + "_labels.npy")
+        try:
+            if labels_path.exists():
+                true_labels = np.load(labels_path)
+                metrics['adjusted_rand_index'] = adjusted_rand_score(true_labels, labels)
+                metrics['normalized_mutual_info'] = normalized_mutual_info_score(
+                    true_labels, labels, average_method="arithmetic"
+                )
+            else:
+                metrics['adjusted_rand_index'] = np.nan
+                metrics['normalized_mutual_info'] = np.nan
+        except Exception as e:
+            print(f"Warning: Error computing external quality metrics: {e}")
+            metrics['adjusted_rand_index'] = np.nan
+            metrics['normalized_mutual_info'] = np.nan
+
         return metrics
     
     def run_experiment(self, n_samples: int, n_features: int, n_clusters: int) -> List[Dict]:

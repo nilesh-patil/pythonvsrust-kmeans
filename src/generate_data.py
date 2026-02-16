@@ -177,30 +177,32 @@ def generate_clustered_data(n_rows: int, n_features: int, n_clusters: int,
     return data, labels
 
 
-def save_data(data: np.ndarray, output_path: str):
+def save_data(data: np.ndarray, output_path: str, labels: np.ndarray | None = None):
     """
-    Save generated data to CSV file
-    
+    Save generated data to CSV file and optionally persist ground-truth labels.
+
     Args:
         data: Generated data array
         output_path: Path to save the CSV file
+        labels: Optional array of true cluster ids (same row order as data).
+                When provided, saved as ``<stem>_labels.npy`` next to the CSV.
     """
     n_rows, n_features = data.shape
-    
+
     # Create DataFrame with ID column
     df_dict = {'ID': range(1, n_rows + 1)}
-    
+
     # Add feature columns
     for i in range(n_features):
         df_dict[f'feature_{i+1}'] = data[:, i]
-    
+
     df = pd.DataFrame(df_dict)
-    
+
     # Create output directory if it doesn't exist
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
+
     # Save to CSV
     try:
         df.to_csv(output_path, index=False)
@@ -208,6 +210,14 @@ def save_data(data: np.ndarray, output_path: str):
     except Exception as e:
         print(f"Error saving data: {e}")
         sys.exit(1)
+
+    # Save ground-truth labels alongside the CSV so downstream tools can
+    # compute external quality metrics (ARI, NMI) without re-running generation.
+    if labels is not None:
+        from pathlib import Path as _Path
+        labels_path = _Path(output_path).with_name(_Path(output_path).stem + "_labels.npy")
+        np.save(labels_path, labels.astype(np.int32))
+        print(f"Labels saved to: {labels_path}")
 
 
 def visualize_clusters_2d(data: np.ndarray, labels: np.ndarray):
@@ -316,9 +326,9 @@ def main():
     if args.n_features >= 2 and args.n_rows <= 500:
         visualize_clusters_2d(data, labels)
     
-    # Save data
+    # Save data (and ground-truth labels)
     print(f"\nSaving data...")
-    save_data(data, args.output)
+    save_data(data, args.output, labels=labels)
     
     print("\nDone!")
 
