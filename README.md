@@ -3,6 +3,7 @@
 A comparative study of K-Means clustering implementations written in pure Python, Rust and scikit-learn.  
 The repository is structured so that you can generate synthetic data, run each implementation under identical scenarios, capture execution metrics and visualise the results.
 
+> **🌐 Live site:** A companion [GitHub Pages site](https://nilesh-patil.github.io/pythonvsrust-kmeans/) renders all results as interactive Plotly dashboards and includes a live, in-browser WebAssembly demo of the Rust K-Means.
 
 ![Python vs Scikit Learn ( Python ) vs Rust](./results/analysis.png "Title")
 
@@ -31,24 +32,34 @@ pythonvsrust-kmeans/
 │
 ├── data/                # Auto-generated datasets (CSV/NPY) used in the benchmarks
 ├── notebooks/           # Jupyter notebooks used to explore data and analyse results
-├── results/             # Raw benchmark results and summary statistics
+├── results/             # Benchmark CSVs, PNGs, GIFs, dashboard HTML
+│   ├── animations/      # Lloyd's-iteration GIFs
+│   └── dashboards/      # Interactive Plotly HTML
+│
+├── docs/                # Jekyll GitHub Pages site (served from here)
+│   ├── _config.yml      # Site config (theme=minima, baseurl)
+│   ├── _layouts/        # Page layouts
+│   ├── assets/          # Mirrored PNGs, GIFs, CSS
+│   ├── wasm/            # Compiled Rust → WebAssembly module + JS glue
+│   └── *.md             # Site pages (index, algorithms, parallel, …)
+│
+├── specs/               # Spec-Driven Development docs, one per feature
+├── tests/               # pytest suite (init, animations, metrics, site)
 │
 ├── src/                 # Source code for the experiment
-│   ├── generate_data.py # Helper script to create synthetic datasets of varying size & dimensionality
-│   ├── python_impl/     # Pure-Python reference implementation of K-Means
-│   │   ├── kmeans.py    # Main K-Means implementation
-│   │   └── README.md    # Python implementation details
-│   ├── rust_impl/       # Rust implementation (compiled to a CLI binary)
-│   │   ├── src/         # Rust source code
-│   │   ├── target/      # Rust build artifacts (gitignored)
-│   │   ├── Cargo.toml   # Rust package manifest
-│   │   ├── Cargo.lock   # Rust dependency lock file
-│   │   └── README.md    # Rust implementation details
-│   ├── sklearn_impl/    # Thin wrapper around sklearn.cluster.KMeans
-│   │   └── kmeans.py    # scikit-learn wrapper implementation
-│   └── README.md        # Source code documentation
+│   ├── generate_data.py            # Synthetic datasets + ground-truth labels (.npy)
+│   ├── animate_convergence.py      # Lloyd's-iteration GIF generator
+│   ├── visualize_init_comparison.py
+│   ├── visualize_parallel_scaling.py
+│   ├── bench_parallel_scaling.py   # Rust thread-count sweep
+│   ├── build_dashboard.py          # Interactive Plotly dashboard
+│   ├── sync_assets.py              # Mirror results/ into docs/assets/
+│   ├── python_impl/     # Pure-Python K-Means (random + k-means++)
+│   ├── rust_impl/       # Rust CLI binary + lib (serial + Rayon-parallel)
+│   ├── sklearn_impl/    # Thin sklearn wrapper
+│   └── wasm_impl/       # WebAssembly build of Rust K-Means
 │
-├── runner.py            # Top-level orchestrator that drives data gen, runs each impl & records metrics
+├── runner.py            # Orchestrator: data gen + run each impl + capture metrics + ARI/NMI
 │
 ├── pixi.toml           # Pixi dependency management configuration
 ├── pixi.lock           # Lock file for reproducible environments

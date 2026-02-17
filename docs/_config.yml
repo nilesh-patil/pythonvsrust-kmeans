@@ -1,0 +1,33 @@
+title:       "Python vs Rust K-Means"
+description: "A comparative study of K-Means clustering implementations in pure Python, Rust, and scikit-learn — runtime, memory, and clustering quality."
+baseurl:     "/pythonvsrust-kmeans"
+url:         ""
+
+markdown:    kramdown
+theme:       minima
+permalink:   pretty
+
+minima:
+  skin: classic
+
+defaults:
+  - scope: { path: "" }
+    values:
+      layout: default
+
+include:
+  - wasm
+
+exclude:
+  - .pixi
+  - target
+  - data
+  - results
+  - notebooks
+  - tests
+  - specs
+  - "*.py"
+  - "*.toml"
+  - "*.lock"
+  - "*.rs"
+  - src

@@ -1,0 +1,14 @@
+{
+  "name": "kmeans_wasm",
+  "version": "0.1.0",
+  "files": [
+    "kmeans_wasm_bg.wasm",
+    "kmeans_wasm.js",
+    "kmeans_wasm.d.ts"
+  ],
+  "module": "kmeans_wasm.js",
+  "types": "kmeans_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
