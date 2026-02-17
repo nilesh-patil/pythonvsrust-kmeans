@@ -6,7 +6,7 @@ title: Benchmarks
 
 All four metric tabs below are rendered from the latest [`results/benchmark_results_*.csv`](https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/results) by [`src/build_dashboard.py`](https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/build_dashboard.py).
 
-<iframe src="dashboard/index.html"
+<iframe src="{{ '/dashboard/index.html' | relative_url }}"
         style="width:100%;height:780px;border:1px solid #e5e7eb;border-radius:6px;"></iframe>
 
 ## How the metrics are computed
