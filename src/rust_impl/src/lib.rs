@@ -12,7 +12,7 @@ pub struct DataPoint {
 /// Centroid initialization strategy.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InitMethod {
-    /// Uniform random sample of k points (original behaviour).
+    /// Uniform random sample of k points — default init scheme.
     Random,
     /// Arthur-Vassilvitskii 2007 D² weighted sampling.
     KMeansPlusPlus,
@@ -64,7 +64,7 @@ impl KMeans {
             .sum()
     }
 
-    /// Euclidean distance used only for cluster assignment (consistent with original).
+    /// Euclidean distance used only for cluster assignment (consistent with the serial path).
     #[inline]
     fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
         Self::squared_distance(a, b).sqrt()
@@ -78,7 +78,7 @@ impl KMeans {
             .fold(f64::INFINITY, f64::min)
     }
 
-    /// Initialize centroids using uniform random sampling (original behaviour).
+    /// Initialize centroids using uniform random sampling (default init when --init=random).
     fn initialize_random(&mut self, data: &[DataPoint]) {
         if self.k >= data.len() {
             self.centroids = data.iter().map(|p| p.features.clone()).collect();

@@ -4,7 +4,7 @@ title: Parallelism
 
 # Adding Rayon to the Rust implementation
 
-The original Rust implementation's README advertised "Parallel Processing: Can leverage Rust's fearless concurrency" — but the actual binary was single-threaded. Feature 2 of this project made that real.
+Pre-Rayon, the Rust implementation's README advertised "Parallel Processing: Can leverage Rust's fearless concurrency" — but the actual binary was single-threaded. Feature 2 of this project made that real.
 
 ## How
 

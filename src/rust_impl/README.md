@@ -123,7 +123,7 @@ When `--parallel` is omitted (the default), the serial path runs unchanged — r
 
 | Value | Behaviour |
 |-------|-----------|
-| `random` | Uniform random sample of k points — original behaviour, fully reproducible with `--random-state`. |
+| `random` | Uniform random sample of k points — default init scheme, fully reproducible with `--random-state`. |
 | `k-means++` | Arthur-Vassilvitskii 2007 D² weighted sampling. First centroid is chosen uniformly; each successive centroid is sampled with probability proportional to its squared distance to the nearest already-chosen centroid. Typically converges to lower inertia than random init, especially on well-separated clusters. |
 
 Using `--init random` (the default) produces **identical results** to the pre-feature-1 binary for any given `--random-state` value.
