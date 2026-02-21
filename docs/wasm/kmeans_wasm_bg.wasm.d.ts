@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const init_panic_hook: () => void;
 export const kmeans_fit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+export const kmeans_fit_steps: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

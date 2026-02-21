@@ -29,7 +29,7 @@ IMPL_COLORS: dict[str, str] = {
 # ── human-readable display names ──────────────────────────────────────────────
 DISPLAY_NAMES: dict[str, str] = {
     "python": "Python",
-    "rust": "Rust - Serial",
+    "rust": "Rust",
     "sklearn": "scikit-learn",
     "rust_parallel": "Rust - Parallel",
 }

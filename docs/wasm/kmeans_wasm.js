@@ -22,6 +22,34 @@ export function kmeans_fit(xs, n, d, k, max_iter, seed, use_kpp) {
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v2;
 }
+
+/**
+ * Run K-Means and return the full iteration history as a flat f32 buffer.
+ *
+ * Header (first 4 floats):
+ *   [iter_count (as f32), converged (1.0 or 0.0), k (as f32), d (as f32)]
+ *
+ * Then `iter_count + 1` "snapshots" (initial state + after each iter). Each snapshot:
+ *   k*d centroid floats, then n label floats (labels stored as f32; JS Math.round).
+ *
+ * Total length: 4 + (iter_count + 1) * (k*d + n)
+ * @param {Float32Array} xs
+ * @param {number} n
+ * @param {number} d
+ * @param {number} k
+ * @param {number} max_iter
+ * @param {number} seed
+ * @param {boolean} use_kpp
+ * @returns {Float32Array}
+ */
+export function kmeans_fit_steps(xs, n, d, k, max_iter, seed, use_kpp) {
+    const ptr0 = passArrayF32ToWasm0(xs, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.kmeans_fit_steps(ptr0, len0, n, d, k, max_iter, seed, use_kpp);
+    var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v2;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -64,6 +92,11 @@ function __wbg_get_imports() {
         __proto__: null,
         "./kmeans_wasm_bg.js": import0,
     };
+}
+
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
 function getArrayI32FromWasm0(ptr, len) {
