@@ -292,7 +292,62 @@ class BenchmarkRunner:
         
         metrics["implementation"] = "rust"
         return metrics
-    
+
+    def run_rust_parallel_impl(self, dataset_path: str, n_clusters: int) -> Dict:
+        """
+        Run Rust K-Means implementation with Rayon parallelism (--parallel --threads 0).
+
+        Args:
+            dataset_path: Path to input dataset
+            n_clusters: Number of clusters
+
+        Returns:
+            Dictionary with metrics and results; implementation == "rust_parallel"
+        """
+        print(f"Running Rust-Parallel implementation (k={n_clusters})...")
+
+        output_path = self.results_dir / f"rust_parallel_output_{os.path.basename(dataset_path)}"
+
+        # Path to Rust binary (same binary, different flags)
+        rust_binary = Path("src/rust_impl/target/release/rust_impl")
+        if not rust_binary.exists():
+            rust_binary = Path("src/rust_impl/target/debug/rust_impl")
+            if not rust_binary.exists():
+                print("Warning: Rust binary not found. Skipping Rust-Parallel implementation.")
+                return {
+                    "runtime": None,
+                    "peak_memory_bytes": None,
+                    "peak_memory_mb": None,
+                    "exit_code": -1,
+                    "inertia": None,
+                    "implementation": "rust_parallel",
+                    "error": "Binary not found",
+                }
+
+        cmd = [
+            str(rust_binary),
+            "--input", dataset_path,
+            "--output", str(output_path),
+            "--k_clusters_max", str(n_clusters),
+            "--random-state", "42",
+            "--parallel",
+            "--threads", "0",  # 0 = all available cores (Rayon default)
+        ]
+
+        metrics = self.measure_process_metrics(cmd)
+
+        if metrics["exit_code"] == 0 and output_path.exists():
+            try:
+                df = pd.read_csv(output_path)
+                clustering_metrics = self.calculate_clustering_metrics(dataset_path, df, n_clusters)
+                metrics.update(clustering_metrics)
+                os.remove(output_path)
+            except Exception as e:
+                print(f"Warning: Could not calculate clustering metrics: {e}")
+
+        metrics["implementation"] = "rust_parallel"
+        return metrics
+
     def calculate_inertia(self, dataset_path: str, results_df: pd.DataFrame, n_clusters: int) -> float:
         """
         Calculate inertia (within-cluster sum of squares)
@@ -451,7 +506,7 @@ class BenchmarkRunner:
         })
         results.append(sklearn_metrics)
         
-        # Run Rust implementation
+        # Run Rust implementation (serial)
         rust_metrics = self.run_rust_impl(dataset_path, n_clusters)
         rust_metrics.update({
             "n_samples": n_samples,
@@ -459,7 +514,16 @@ class BenchmarkRunner:
             "n_clusters": n_clusters
         })
         results.append(rust_metrics)
-        
+
+        # Run Rust implementation (Rayon parallel) — reuses the same dataset file
+        rust_parallel_metrics = self.run_rust_parallel_impl(dataset_path, n_clusters)
+        rust_parallel_metrics.update({
+            "n_samples": n_samples,
+            "n_features": n_features,
+            "n_clusters": n_clusters
+        })
+        results.append(rust_parallel_metrics)
+
         return results
     
     def run_benchmark_suite(self, config: Dict) -> pd.DataFrame:

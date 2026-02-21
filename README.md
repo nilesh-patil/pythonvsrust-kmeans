@@ -106,6 +106,14 @@ This project uses [Pixi](https://pixi.sh/) for dependency management, which prov
 3. **View results**:
    Results are saved in the `results/` directory as CSV files and visualization plots.
 
+> **Four rows per experiment.** Each benchmark experiment now produces **four result rows** in the CSV:
+> `python`, `sklearn`, `rust` (serial), and `rust_parallel` (Rayon, all cores).
+> The serial and parallel Rust rows reuse the same generated dataset file, so only one
+> dataset-generation pass is needed per experiment configuration.
+> The dashboard (`src/build_dashboard.py`) maps `rust_parallel` to the display name
+> "Rust - Parallel" and colours it sienna (`#A0522D`) to distinguish it from the
+> orange-red of the serial Rust row.
+
 ### Using Pixi Tasks (Recommended)
 
 The project includes pre-defined pixi tasks that streamline common workflows:

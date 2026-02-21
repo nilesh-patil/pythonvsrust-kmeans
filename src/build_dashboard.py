@@ -23,11 +23,24 @@ IMPL_COLORS: dict[str, str] = {
     "python": "#3776AB",
     "rust": "#CE422B",
     "sklearn": "#F7931E",
+    "rust_parallel": "#A0522D",  # sienna — darker rust shade for parallel variant
+}
+
+# ── human-readable display names ──────────────────────────────────────────────
+DISPLAY_NAMES: dict[str, str] = {
+    "python": "Python",
+    "rust": "Rust - Serial",
+    "sklearn": "scikit-learn",
+    "rust_parallel": "Rust - Parallel",
 }
 
 
 def _color(impl: str) -> str:
     return IMPL_COLORS.get(impl.lower(), "#888888")
+
+
+def _display_name(impl: str) -> str:
+    return DISPLAY_NAMES.get(impl.lower(), impl)
 
 
 # ── chart builders ────────────────────────────────────────────────────────────
