@@ -50,17 +50,18 @@ def _runtime_chart(df: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     for impl, grp in df.groupby("implementation"):
         grp = grp.sort_values("n_samples")
+        display = _display_name(impl)
         fig.add_trace(
             go.Scatter(
                 x=grp["n_samples"],
                 y=grp["runtime"],
                 mode="markers+lines",
-                name=impl,
+                name=display,
                 marker=dict(color=_color(impl), size=8),
                 line=dict(color=_color(impl)),
                 customdata=grp[["n_features", "n_clusters", "runtime"]].values,
                 hovertemplate=(
-                    f"<b>{impl}</b><br>"
+                    f"<b>{display}</b><br>"
                     "n_samples=%{x}<br>"
                     "n_features=%{customdata[0]}<br>"
                     "n_clusters=%{customdata[1]}<br>"
@@ -83,9 +84,10 @@ def _memory_chart(df: pd.DataFrame) -> go.Figure:
     df["mb_per_1k"] = df["peak_memory_mb"] / (df["n_samples"] / 1_000)
     agg = df.groupby("implementation")["mb_per_1k"].mean().reset_index()
 
+    agg["display"] = agg["implementation"].map(_display_name)
     fig = go.Figure(
         go.Bar(
-            x=agg["implementation"],
+            x=agg["display"],
             y=agg["mb_per_1k"],
             marker_color=[_color(i) for i in agg["implementation"]],
             hovertemplate="%{x}: %{y:.2f} MB/1k samples<extra></extra>",
@@ -107,25 +109,26 @@ def _internal_quality_chart(df: pd.DataFrame) -> go.Figure:
 
     for impl in impls:
         row = agg.loc[impl] if impl in agg.index else pd.Series({"silhouette_score": 0, "davies_bouldin_index": 0})
+        display = _display_name(impl)
         fig.add_trace(
             go.Bar(
-                name=f"{impl} — silhouette",
+                name=f"{display} — silhouette",
                 x=["Silhouette (↑)"],
                 y=[row["silhouette_score"]],
                 marker_color=_color(impl),
-                legendgroup=impl,
-                hovertemplate=f"{impl} silhouette=%{{y:.4f}}<extra></extra>",
+                legendgroup=display,
+                hovertemplate=f"{display} silhouette=%{{y:.4f}}<extra></extra>",
             )
         )
         fig.add_trace(
             go.Bar(
-                name=f"{impl} — Davies-Bouldin",
+                name=f"{display} — Davies-Bouldin",
                 x=["Davies-Bouldin (↓)"],
                 y=[row["davies_bouldin_index"]],
                 marker_color=_color(impl),
-                legendgroup=impl,
+                legendgroup=display,
                 showlegend=False,
-                hovertemplate=f"{impl} Davies-Bouldin=%{{y:.4f}}<extra></extra>",
+                hovertemplate=f"{display} Davies-Bouldin=%{{y:.4f}}<extra></extra>",
             )
         )
     fig.update_layout(
@@ -150,25 +153,26 @@ def _external_quality_chart(df: pd.DataFrame) -> go.Figure | None:
     agg = valid.groupby("implementation")[["adjusted_rand_index", "normalized_mutual_info"]].mean()
 
     for impl, row in agg.iterrows():
+        display = _display_name(str(impl))
         fig.add_trace(
             go.Bar(
-                name=f"{impl} — ARI",
+                name=f"{display} — ARI",
                 x=["ARI (↑)"],
                 y=[row["adjusted_rand_index"]],
                 marker_color=_color(str(impl)),
-                legendgroup=str(impl),
-                hovertemplate=f"{impl} ARI=%{{y:.4f}}<extra></extra>",
+                legendgroup=display,
+                hovertemplate=f"{display} ARI=%{{y:.4f}}<extra></extra>",
             )
         )
         fig.add_trace(
             go.Bar(
-                name=f"{impl} — NMI",
+                name=f"{display} — NMI",
                 x=["NMI (↑)"],
                 y=[row["normalized_mutual_info"]],
                 marker_color=_color(str(impl)),
-                legendgroup=str(impl),
+                legendgroup=display,
                 showlegend=False,
-                hovertemplate=f"{impl} NMI=%{{y:.4f}}<extra></extra>",
+                hovertemplate=f"{display} NMI=%{{y:.4f}}<extra></extra>",
             )
         )
     fig.update_layout(

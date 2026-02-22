@@ -69,6 +69,20 @@ def main() -> None:
     ax.bar(x + width / 2, kpp_means,  width, yerr=kpp_stds,
            label="k-means++", color="#0ea5e9", capsize=4)
 
+    # Annotate the ratio (random / k-means++) above each bar pair.
+    # On a log scale the "top" of a bar is its mean value; we place the
+    # annotation just above the taller of the two bars.
+    for i, (rm, km) in enumerate(zip(rand_means, kpp_means)):
+        ratio = rm / km if km > 0 else float("nan")
+        top = max(rm, km)
+        ax.annotate(
+            f"{ratio:.1f}×",
+            xy=(x[i], top),
+            xytext=(x[i], top * 1.25),  # slightly above on the log axis
+            ha="center", va="bottom",
+            fontsize=9, fontweight="bold", color="#555",
+        )
+
     ax.set_xticks(x)
     ax.set_xticklabels([f"{n}\n(n={s:,}, d={d}, k={k})"
                         for (n, s, d, k) in DATASETS])
@@ -78,7 +92,11 @@ def main() -> None:
     ax.legend()
     ax.grid(axis="y", linestyle=":", alpha=0.6)
 
-    fig.tight_layout()
+    # Footer note — placed in figure coordinates so it sits below the axes.
+    fig.text(0.5, 0.01, "Lower is better · 10 seeds per bar",
+             ha="center", va="bottom", fontsize=8, color="#888")
+
+    fig.tight_layout(rect=[0, 0.04, 1, 1])
     out_path = REPO_ROOT / "results" / "init_comparison.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)

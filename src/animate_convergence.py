@@ -19,7 +19,8 @@ from typing import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
-from sklearn.datasets import make_blobs
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from sklearn.datasets import make_blobs, make_circles, make_moons
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "python_impl"))
@@ -120,6 +121,20 @@ def animate(trace: LloydsTrace, X: np.ndarray, k: int, out_path: Path,
     ax.set_xticks([]); ax.set_yticks([])
     base_title = title or f"Lloyd's K-Means — init={trace.init}, k={k}"
 
+    # Inset axes in the top-right corner: inertia vs iteration line plot.
+    # Width/height as fraction of main axes; loc=1 is upper-right.
+    ax_inset = inset_axes(ax, width="35%", height="28%", loc="upper right",
+                          borderpad=1.2)
+    ax_inset.set_facecolor("#f8f8f8")
+    ax_inset.tick_params(labelsize=6)
+    ax_inset.set_xlabel("iter", fontsize=6)
+    ax_inset.set_ylabel("inertia", fontsize=6)
+    ax_inset.set_title("inertia", fontsize=7, pad=2)
+    all_iters = list(range(len(trace.inertia_history)))
+    # Pre-draw the full background curve in light grey as context.
+    ax_inset.plot(all_iters, trace.inertia_history, color="#d1d5db", lw=1, zorder=1)
+    (inset_line,) = ax_inset.plot([], [], color="#dc2626", lw=1.5, zorder=2)
+
     # Hold the converged state on the last few frames for readability.
     hold = 3
     n_frames = len(trace.centroid_history) + hold
@@ -139,10 +154,13 @@ def animate(trace: LloydsTrace, X: np.ndarray, k: int, out_path: Path,
             ys = [trace.centroid_history[s][c, 1] for s in range(step + 1)]
             trail_lines[c].set_data(xs, ys)
 
+        # Update the inset line to show progress up to the current step.
+        inset_line.set_data(all_iters[: step + 1], trace.inertia_history[: step + 1])
+
         status = "converged" if step == trace.iterations_run else f"iter {step}"
         ax.set_title(f"{base_title}\n{status} · inertia = {inertia:,.1f}",
                      fontsize=11)
-        return [scatter, centroid_dots, *trail_lines]
+        return [scatter, centroid_dots, *trail_lines, inset_line]
 
     anim = FuncAnimation(fig, frame, frames=n_frames, interval=1000 / fps,
                          blit=False, repeat=True)
@@ -181,6 +199,23 @@ def main(argv: Sequence[str] | None = None) -> None:
     animate(trace_bad, X_path, k=4,
             out_path=args.output_dir / "convergence_pathological.gif",
             title="random init — pathological seed", fps=args.fps)
+
+    # make_moons: two interleaved crescent shapes — k-means bisects them
+    # incorrectly because they aren't convex.  k=2 since there are two moons.
+    # 250 samples keeps the GIF under 250 KB while still showing the failure.
+    X_moons, _ = make_moons(n_samples=250, noise=0.10, random_state=42)
+    trace_moons = run_lloyds(X_moons, k=2, init="random", seed=7, max_iter=15)
+    animate(trace_moons, X_moons, k=2,
+            out_path=args.output_dir / "convergence_moons.gif",
+            title="make_moons — k-means failure mode", fps=args.fps)
+
+    # make_circles: two concentric rings — k-means pie-slices them instead of
+    # separating inner from outer, a classic non-convex failure mode.
+    X_circles, _ = make_circles(n_samples=200, noise=0.06, factor=0.5, random_state=42)
+    trace_circles = run_lloyds(X_circles, k=2, init="random", seed=7, max_iter=15)
+    animate(trace_circles, X_circles, k=2,
+            out_path=args.output_dir / "convergence_circles.gif",
+            title="make_circles — k-means failure mode", fps=args.fps)
 
 
 if __name__ == "__main__":

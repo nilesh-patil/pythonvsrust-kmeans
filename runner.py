@@ -651,38 +651,81 @@ class BenchmarkRunner:
         
     def generate_plots(self, results_df: pd.DataFrame):
         """Generate comparison plots for benchmark results"""
+        # Local palette matching the project-wide unified colours.  Defined here
+        # rather than imported from build_dashboard to avoid a cross-module
+        # coupling that would break if the dashboard is unavailable at import time.
+        RUNNER_PALETTE: dict[str, str] = {
+            "python":        "#3776AB",
+            "rust":          "#CE422B",
+            "rust_parallel": "#A0522D",
+            "sklearn":       "#F7931E",
+        }
+        DISPLAY_NAMES: dict[str, str] = {
+            "python":        "Python",
+            "rust":          "Rust",
+            "rust_parallel": "Rust - Parallel",
+            "sklearn":       "scikit-learn",
+        }
+
+        def _palette(impl: str) -> str:
+            return RUNNER_PALETTE.get(impl.lower(), "#888888")
+
+        def _label(impl: str) -> str:
+            return DISPLAY_NAMES.get(impl.lower(), impl)
+
         try:
             import matplotlib.pyplot as plt
             import seaborn as sns
-            
+
             # Set style
             plt.style.use('seaborn-v0_8-darkgrid')
             sns.set_palette("husl")
-            
+
             # Create figure with subplots
             fig, axes = plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('K-Means Implementation Comparison', fontsize=16)
-            
-            # 1. Runtime comparison
+
+            # 1. Runtime comparison — log-y because values span orders of magnitude;
+            #    linear scale would squash the fast implementations into invisibility.
             ax = axes[0, 0]
-            sns.boxplot(data=results_df, x='implementation', y='runtime', ax=ax)
+            impl_order = sorted(results_df['implementation'].unique())
+            sns.boxplot(
+                data=results_df, x='implementation', y='runtime', ax=ax,
+                order=impl_order,
+                palette={impl: _palette(impl) for impl in impl_order},
+            )
+            ax.set_yscale('log')
             ax.set_title('Runtime Distribution')
-            ax.set_ylabel('Runtime (seconds)')
+            ax.set_ylabel('Runtime (seconds, log scale)')
             ax.set_xlabel('Implementation')
-            
+            ax.set_xticklabels([_label(t.get_text()) for t in ax.get_xticklabels()])
+
             # 2. Memory usage comparison
             ax = axes[0, 1]
-            sns.boxplot(data=results_df, x='implementation', y='peak_memory_mb', ax=ax)
+            sns.boxplot(
+                data=results_df, x='implementation', y='peak_memory_mb', ax=ax,
+                order=impl_order,
+                palette={impl: _palette(impl) for impl in impl_order},
+            )
             ax.set_title('Memory Usage Distribution')
             ax.set_ylabel('Peak Memory (MB)')
             ax.set_xlabel('Implementation')
-            
-            # 3. Scalability plot (runtime vs data size)
+            ax.set_xticklabels([_label(t.get_text()) for t in ax.get_xticklabels()])
+
+            # 3. Scalability plot (runtime vs data size) with ±1σ variance band.
             ax = axes[1, 0]
-            for impl in results_df['implementation'].unique():
+            for impl in impl_order:
                 impl_df = results_df[results_df['implementation'] == impl]
-                grouped = impl_df.groupby('n_samples')['runtime'].mean()
-                ax.plot(grouped.index, grouped.values, marker='o', label=impl.upper())
+                grp = impl_df.groupby('n_samples')['runtime'].agg(['mean', 'std'])
+                color = _palette(impl)
+                ax.plot(grp.index, grp['mean'], marker='o', label=_label(impl),
+                        color=color)
+                ax.fill_between(
+                    grp.index,
+                    grp['mean'] - grp['std'].fillna(0),
+                    grp['mean'] + grp['std'].fillna(0),
+                    color=color, alpha=0.20,
+                )
             ax.set_xscale('log')
             ax.set_yscale('log')
             ax.set_title('Scalability: Runtime vs Data Size')
@@ -690,32 +733,34 @@ class BenchmarkRunner:
             ax.set_ylabel('Runtime (seconds)')
             ax.legend()
             ax.grid(True, alpha=0.3)
-            
+
             # 4. Quality comparison (if available)
             ax = axes[1, 1]
             if 'silhouette_score' in results_df.columns:
                 quality_metrics = results_df.groupby('implementation')['silhouette_score'].mean()
-                bars = ax.bar(quality_metrics.index, quality_metrics.values)
+                bar_colors = [_palette(impl) for impl in quality_metrics.index]
+                bar_labels = [_label(impl) for impl in quality_metrics.index]
+                bars = ax.bar(bar_labels, quality_metrics.values, color=bar_colors)
                 ax.set_title('Average Clustering Quality (Silhouette Score)')
                 ax.set_ylabel('Silhouette Score')
                 ax.set_xlabel('Implementation')
                 ax.set_ylim(0, 1)
-                
+
                 # Add value labels on bars
                 for bar in bars:
                     height = bar.get_height()
-                    ax.text(bar.get_x() + bar.get_width()/2., height,
-                           f'{height:.3f}', ha='center', va='bottom')
-            
+                    ax.text(bar.get_x() + bar.get_width() / 2., height,
+                            f'{height:.3f}', ha='center', va='bottom')
+
             plt.tight_layout()
-            
+
             # Save plot
             plot_file = self.results_dir / f"benchmark_plots_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             plt.savefig(plot_file, dpi=300, bbox_inches='tight')
             plt.close()
-            
+
             print(f"Plots saved to: {plot_file}")
-            
+
         except ImportError:
             print("Warning: matplotlib not available, skipping plot generation")
 
