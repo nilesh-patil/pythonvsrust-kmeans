@@ -129,8 +129,8 @@ th {
 
 .demo-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.8rem 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.7rem 1rem;
   margin: 1rem 0;
   padding: 1rem;
   background: var(--code-bg);
@@ -193,3 +193,51 @@ th {
 }
 
 .metric-card .v { font-size: 1.6rem; font-weight: 600; }
+
+/* --- Demo: distribution selector full-width in grid --- */
+.demo-controls select {
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* --- Demo: inertia chart inset --- */
+.demo-inertia-wrap {
+  margin: 0.6rem auto 0;
+  text-align: center;
+}
+
+.demo-inertia-wrap p {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 0.25rem;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#inertia-canvas {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafafa;
+  max-width: 100%;
+  display: block;
+  margin: 0 auto;
+}
+
+/* --- Demo: WASM-vs-JS race result --- */
+.race-result {
+  margin-top: 0.5rem;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  color: var(--muted);
+  text-align: center;
+  min-height: 1.4em;
+}
+
+.race-result .rust { color: var(--rust); font-weight: 600; }
+.race-result .js   { color: var(--accent); font-weight: 600; }
