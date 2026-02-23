@@ -1,0 +1,76 @@
+K-Means Clustering Benchmark Summary
+============================================================
+Total experiments: 48
+Timestamp: 2026-05-18 00:35:17
+
+
+PYTHON Implementation:
+----------------------------------------
+Performance Metrics:
+  Average runtime: 1.587 seconds
+  Average memory: 81.6 MB
+  Average CPU usage: 44.5%
+  Max CPU usage: 115.3%
+
+Clustering Quality Metrics:
+  Average inertia: 287557.83
+  Average silhouette score: 0.672
+  Average Davies-Bouldin index: 0.957
+  Average Calinski-Harabasz index: 132048.12
+
+SKLEARN Implementation:
+----------------------------------------
+Performance Metrics:
+  Average runtime: 5.262 seconds
+  Average memory: 179.1 MB
+  Average CPU usage: 57.5%
+  Max CPU usage: 186.1%
+
+Clustering Quality Metrics:
+  Average inertia: 4382.89
+  Average silhouette score: 0.926
+  Average Davies-Bouldin index: 0.104
+  Average Calinski-Harabasz index: 451257.12
+
+RUST Implementation:
+----------------------------------------
+Performance Metrics:
+  Average runtime: 0.058 seconds
+  Average memory: 3.9 MB
+  Average CPU usage: 52.8%
+  Max CPU usage: 56.0%
+
+Clustering Quality Metrics:
+  Average inertia: 520556.14
+  Average silhouette score: 0.605
+  Average Davies-Bouldin index: 1.079
+  Average Calinski-Harabasz index: 49537.07
+
+RUST_PARALLEL Implementation:
+----------------------------------------
+Performance Metrics:
+  Average runtime: 0.104 seconds
+  Average memory: 6.3 MB
+  Average CPU usage: 144.2%
+  Max CPU usage: 233.0%
+
+Clustering Quality Metrics:
+  Average inertia: 520556.14
+  Average silhouette score: 0.605
+  Average Davies-Bouldin index: 1.079
+  Average Calinski-Harabasz index: 49537.07
+
+
+COMPARISON SUMMARY
+============================================================
+
+Speedup relative to Python implementation:
+  SKLEARN: 0.30x faster
+  RUST: 27.47x faster
+  RUST_PARALLEL: 15.22x faster
+
+Memory efficiency (MB per 1000 samples):
+  PYTHON: 36.77 MB/1k samples
+  SKLEARN: 82.28 MB/1k samples
+  RUST: 0.93 MB/1k samples
+  RUST_PARALLEL: 2.58 MB/1k samples

@@ -21,13 +21,24 @@ src/
   sync_assets.py             # Mirror results/* into docs/assets/*
   bench_parallel_scaling.py  # Rayon thread sweep
 
-runner.py              # Orchestrator: subprocess each impl, capture metrics
-tests/                 # pytest suite (17 tests across init, animations, metrics, site)
+runner.py              # Orchestrator: subprocesses Python + sklearn + Rust + Rust-Parallel
+tests/                 # pytest suite (~20 tests across init, animations, metrics, site, bench)
 specs/                 # Spec-Driven Development docs (one per feature)
 docs/                  # Jekyll site (served from this dir by GH Pages)
+  └── assets/js/demo.js  # Live in-browser demo: 6 distributions, step animation, WASM-vs-JS race
 results/               # Benchmark CSVs, PNGs, GIFs, dashboard HTML
 data/                  # Generated datasets + _labels.npy (gitignored)
+.claude-worktrees/     # Local-only git worktrees (gitignored)
 ```
+
+## Implementation labels
+
+- **`python`** → "Python" (pure-NumPy reference)
+- **`sklearn`** → "scikit-learn"
+- **`rust`** → "Rust" (serial Lloyd's via the CLI binary)
+- **`rust_parallel`** → "Rust - Parallel" (Rayon-backed; same binary, `--parallel --threads 0`)
+
+The runner emits separate rows for `rust` and `rust_parallel`; the dashboard renders both side by side. Implementation-name → color and display-name maps live in `src/build_dashboard.py` (`IMPL_COLORS`, `DISPLAY_NAMES`) and are mirrored in `runner.py`'s `generate_plots()` for cross-artifact consistency.
 
 ## Dev workflow
 

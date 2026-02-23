@@ -3,17 +3,17 @@
 A comparative study of K-Means clustering implementations written in pure Python, Rust and scikit-learn.  
 The repository is structured so that you can generate synthetic data, run each implementation under identical scenarios, capture execution metrics and visualise the results.
 
-> **🌐 Live site:** A companion [GitHub Pages site](https://nilesh-patil.github.io/pythonvsrust-kmeans/) renders all results as interactive Plotly dashboards and includes a live, in-browser WebAssembly demo of the Rust K-Means.
+> **🌐 Live site:** A companion [GitHub Pages site](https://nilesh-patil.github.io/pythonvsrust-kmeans/) renders all results as interactive Plotly dashboards and includes a [live, in-browser WebAssembly demo](https://nilesh-patil.github.io/pythonvsrust-kmeans/demo/) of the Rust K-Means with step-by-step Lloyd's-iteration animation, six point distributions (blobs, rings, moons, anisotropic, uniform, spiral), and a WASM-vs-pure-JS speed race.
 
 ![Python vs Scikit Learn ( Python ) vs Rust](./results/analysis.png "Title")
 
 ### Lloyd's iterations, animated
 
-| random init | k-means++ init | pathological random seed |
-|---|---|---|
-| ![random](./results/animations/convergence_random.gif) | ![k-means++](./results/animations/convergence_kpp.gif) | ![pathological](./results/animations/convergence_pathological.gif) |
+| random init | k-means++ init | pathological random seed | two moons (k-means fails) | concentric rings (k-means fails) |
+|---|---|---|---|---|
+| ![random](./results/animations/convergence_random.gif) | ![k-means++](./results/animations/convergence_kpp.gif) | ![pathological](./results/animations/convergence_pathological.gif) | ![moons](./results/animations/convergence_moons.gif) | ![circles](./results/animations/convergence_circles.gif) |
 
-Random init converges slowly when two centroids start in the same blob (right). k-means++ usually picks one centroid per blob on the first try (middle), converging in 2–3 iterations.
+Random init converges slowly when two centroids start in the same blob (third panel). k-means++ usually picks one centroid per blob on the first try (second panel), converging in 2–3 iterations. The right-hand panels show k-means' two classic failure modes — moons get bisected and rings get pie-sliced because k-means imposes Voronoi (convex-polytope) cluster boundaries.
 
 ### k-means++ vs random initialization
 
