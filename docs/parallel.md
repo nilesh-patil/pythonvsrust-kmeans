@@ -2,6 +2,10 @@
 title: Parallelism
 ---
 
+<div class="site-content">
+
+<span class="eyebrow">Parallelism</span>
+
 # Adding Rayon to the Rust implementation
 
 Pre-Rayon, the Rust implementation's README advertised "Parallel Processing: Can leverage Rust's fearless concurrency" — but the actual binary was single-threaded. Feature 2 of this project made that real.
@@ -10,9 +14,23 @@ Pre-Rayon, the Rust implementation's README advertised "Parallel Processing: Can
 
 Lloyd's hot loop has two data-parallel steps and one essentially serial check:
 
-- **Assignment** — each point independently finds its nearest centroid. Trivially `par_iter()`.
-- **Update** — accumulate per-cluster sums. Naïve sharing causes contention; instead each rayon worker holds a private `Vec<(sum, count)>` per cluster, then a `reduce` merges them.
-- **Convergence** — comparing label vectors. Cheap; left serial.
+<div class="feature-grid">
+  <div class="card">
+    <span class="badge badge-orange">Assignment</span>
+    <h4 style="margin-top: 0.6rem;">Trivially parallel</h4>
+    <p>Each point independently finds its nearest centroid. Use <code>par_iter()</code>.</p>
+  </div>
+  <div class="card">
+    <span class="badge badge-cream">Update</span>
+    <h4 style="margin-top: 0.6rem;">Per-thread accumulator</h4>
+    <p>Naïve sharing causes contention; each rayon worker holds a private <code>Vec&lt;(sum, count)&gt;</code> per cluster, then a <code>reduce</code> merges them.</p>
+  </div>
+  <div class="card">
+    <span class="badge badge-dark">Convergence</span>
+    <h4 style="margin-top: 0.6rem;">Left serial</h4>
+    <p>Comparing label vectors. Cheap; not worth parallelising.</p>
+  </div>
+</div>
 
 ```rust
 let labels: Vec<usize> = data
@@ -31,7 +49,7 @@ let merged = data
 
 ![parallel scaling](assets/images/parallel_scaling.png)
 
-The headline numbers (200 000 points × 32 features × 16 clusters, on an Apple M-series, 14 cores):
+200 000 points × 32 features × 16 clusters on an Apple M-series, 14 cores:
 
 | Threads | Wall-clock | Speedup vs serial |
 |--------:|-----------:|------------------:|
@@ -46,10 +64,13 @@ Honest answer: **modest** speedup, plateauing around 4–8 threads.
 
 ## Why not more?
 
-Three reasons:
+<div class="card-cream-soft">
+<ol>
+  <li><strong>Lloyd's is serial across iterations.</strong> Each iteration depends on the previous — you parallelise <em>within</em> an iteration, not across.</li>
+  <li><strong>The data layout is pointer-chasing.</strong> <code>Vec&lt;DataPoint { id: String, features: Vec&lt;f64&gt; }&gt;</code>. A flat <code>Vec&lt;f64&gt;</code> of length <code>n × d</code> would be cache-friendlier — but it's a bigger refactor than this feature allowed.</li>
+  <li><strong>Many small fits dominate.</strong> The CLI runs <code>k = 1..k_max</code>. Most of those fits are tiny and Rayon's per-fit setup eats the gain.</li>
+</ol>
+<p style="margin: 0;">A future direction: flatten the data layout and run only the <code>k = k_max</code> fit in benchmarks. That should push scaling closer to the ideal line.</p>
+</div>
 
-1. **Lloyd's is serial across iterations.** Each iteration depends on the previous one — you parallelize *within* an iteration, not across.
-2. **`Vec<DataPoint { id: String, features: Vec<f64> }>` is pointer-chasing.** A flat `Vec<f64>` of length `n × d` would be cache-friendlier and likely scale better — but it's a bigger refactor than this feature allowed.
-3. **Many small fits dominate.** The CLI runs `k = 1..k_max`. Most of those fits are tiny and Rayon's per-fit setup eats the gain.
-
-A future direction: flatten the data layout and run only the `k = k_max` fit in benchmarks. That should push scaling closer to the ideal line.
+</div>

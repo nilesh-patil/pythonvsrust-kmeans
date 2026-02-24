@@ -2,11 +2,17 @@
 title: Live demo
 ---
 
-# Live K-Means demo (Rust → WebAssembly)
+<div class="site-content">
 
-Watch Lloyd's algorithm converge step by step — the Rust implementation runs entirely in your browser via WebAssembly. No data leaves your machine; the only network call is the one that loads the ~24 KB `.wasm` file.
+<span class="eyebrow">Live demo</span>
 
-Choose a distribution, tune the controls, and hit **Run K-Means** to see each iteration animate live alongside a real-time inertia chart. A pure-JS K-Means runs in parallel so you can see the WASM speedup directly.
+# Lloyd's, in your browser.
+
+<p style="font-size: 1.1rem; color: var(--charcoal); max-width: 60ch;">
+Watch K-Means converge step by step — the Rust implementation runs entirely in your browser via WebAssembly. No data leaves your machine; the only network call is the one that loads the ~24&nbsp;KB <code>.wasm</code> file.
+</p>
+
+<p>Choose a distribution, tune the controls, and hit <strong>Run K-Means</strong> to see each iteration animate live alongside a real-time inertia chart. A pure-JS K-Means runs in parallel so you can see the WASM speedup directly.</p>
 
 <div class="demo-canvas-wrap">
   <canvas id="demo-canvas" width="480" height="480"></canvas>
@@ -86,3 +92,5 @@ wasm-pack build --target web --out-dir ../../docs/wasm
 **Inertia chart**: the small canvas below the main plot shows the within-cluster sum-of-squared distances per iteration, updating in real time as the animation plays. Convergence is visible as the curve flattens.
 
 Float32Arrays cross the JS↔WASM boundary without copying thanks to `wasm-bindgen`'s typed-array support.
+
+</div>

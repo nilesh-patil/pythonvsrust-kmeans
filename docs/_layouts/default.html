@@ -5,11 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% if page.title %}{{ page.title }} · {% endif %}{{ site.title }}</title>
   <meta name="description" content="{{ site.description }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
 </head>
 <body>
   <header class="site-header">
-    <a class="site-title" href="{{ '/' | relative_url }}">{{ site.title }}</a>
+    <a class="site-title" href="{{ '/' | relative_url }}">pythonvsrust-kmeans</a>
     <nav class="site-nav">
       <a href="{{ '/'            | relative_url }}">Overview</a>
       <a href="{{ '/algorithms/' | relative_url }}">Algorithms</a>
@@ -20,12 +23,18 @@
     </nav>
   </header>
 
-  <main class="site-content">
+  <main class="site-main">
     {{ content }}
   </main>
 
+  <div class="sunset-stripe" aria-hidden="true"></div>
+
   <footer class="site-footer">
-    <p>Built with Jekyll · Source on <a href="https://github.com/nilesh-patil/pythonvsrust-kmeans">GitHub</a></p>
+    <p>
+      Source on <a href="https://github.com/nilesh-patil/pythonvsrust-kmeans">GitHub</a> ·
+      Built with Jekyll · Design language follows the
+      <a href="https://mistral.ai">Mistral AI</a> system
+    </p>
   </footer>
 </body>
 </html>
