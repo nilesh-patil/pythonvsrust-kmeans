@@ -2,7 +2,7 @@
 title: About
 ---
 
-<div class="site-content">
+<div class="site-content" markdown="1">
 
 <span class="eyebrow">About</span>
 
@@ -61,7 +61,7 @@ The site itself is served from the `docs/` directory by GitHub Pages — no CI b
 
 ## Tools and libraries
 
-<div class="card-cream">
+<div class="card-cream" markdown="1">
 <ul style="margin: 0; padding-left: 1.2rem;">
   <li><strong>Python</strong>: NumPy, pandas, scikit-learn, matplotlib, Plotly, pytest, psutil.</li>
   <li><strong>Rust</strong>: clap, rand, csv, rayon, wasm-bindgen.</li>

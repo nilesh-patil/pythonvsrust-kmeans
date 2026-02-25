@@ -2,7 +2,7 @@
 title: Benchmarks
 ---
 
-<div class="site-content">
+<div class="site-content" markdown="1">
 
 <span class="eyebrow">Benchmarks</span>
 

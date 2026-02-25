@@ -2,7 +2,7 @@
 title: Parallelism
 ---
 
-<div class="site-content">
+<div class="site-content" markdown="1">
 
 <span class="eyebrow">Parallelism</span>
 
@@ -64,7 +64,7 @@ Honest answer: **modest** speedup, plateauing around 4–8 threads.
 
 ## Why not more?
 
-<div class="card-cream-soft">
+<div class="card-cream-soft" markdown="1">
 <ol>
   <li><strong>Lloyd's is serial across iterations.</strong> Each iteration depends on the previous — you parallelise <em>within</em> an iteration, not across.</li>
   <li><strong>The data layout is pointer-chasing.</strong> <code>Vec&lt;DataPoint { id: String, features: Vec&lt;f64&gt; }&gt;</code>. A flat <code>Vec&lt;f64&gt;</code> of length <code>n × d</code> would be cache-friendlier — but it's a bigger refactor than this feature allowed.</li>

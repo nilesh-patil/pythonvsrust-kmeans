@@ -1,6 +1,10 @@
 # Git worktrees (local-only)
 .claude-worktrees/
 
+# Local screenshots / scratch artefacts from devtools verification
+.live-*.png
+/tmp/
+
 # Data
 data/*
 

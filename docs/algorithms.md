@@ -2,7 +2,7 @@
 title: Algorithms
 ---
 
-<div class="site-content">
+<div class="site-content" markdown="1">
 
 <span class="eyebrow">Algorithms</span>
 
@@ -25,7 +25,7 @@ The catch — the final result depends on where you start.
 
 ## Animation: random vs k-means++ vs failure modes
 
-<div class="card-cream">
+<div class="card-cream" markdown="1">
 
 | random init | k-means++ init | pathological random | two moons | concentric rings |
 |---|---|---|---|---|
