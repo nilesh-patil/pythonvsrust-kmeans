@@ -449,6 +449,62 @@ a.btn-ghost { border: 1px solid var(--color-soft-concrete); }
   max-width: 60ch;
 }
 
+/* ── Demo grid (2-column layout) ───────────────────────────────────────── */
+.demo-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: var(--spacing-32);
+  align-items: start;
+  margin: var(--spacing-32) 0;
+}
+
+.demo-grid .demo-controls {
+  grid-template-columns: 1fr;
+  margin: 0;
+  position: sticky;
+  top: 80px;
+}
+
+.demo-visual {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  align-items: center;
+}
+
+.demo-visual .demo-canvas-wrap {
+  margin: 0;
+  width: 100%;
+}
+
+.demo-visual #demo-canvas {
+  width: 100%;
+  height: auto;
+  max-width: 560px;
+  aspect-ratio: 1 / 1;
+}
+
+.demo-visual .inertia-wrap {
+  width: 100%;
+  max-width: 560px;
+}
+
+.demo-visual #inertia-canvas {
+  width: 100%;
+  height: auto;
+  max-width: 560px;
+  aspect-ratio: 4 / 1;
+}
+
+@media (max-width: 900px) {
+  .demo-grid {
+    grid-template-columns: 1fr;
+  }
+  .demo-grid .demo-controls {
+    position: static;
+  }
+}
+
 /* ── Demo controls ─────────────────────────────────────────────────────── */
 .demo-canvas-wrap { margin: var(--spacing-32) auto; text-align: center; }
 

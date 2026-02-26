@@ -14,54 +14,59 @@ Watch K-Means converge step by step — the Rust implementation runs entirely in
 
 <p>Choose a distribution, tune the controls, and hit <strong>Run K-Means</strong> to see each iteration animate live alongside a real-time inertia chart. A pure-JS K-Means runs in parallel so you can see the WASM speedup directly.</p>
 
-<div class="demo-canvas-wrap">
-  <canvas id="demo-canvas" width="480" height="480"></canvas>
+<div class="demo-grid" markdown="0">
+  <!-- LEFT: controls + status -->
+  <aside class="demo-controls">
+    <label>Distribution:
+      <select id="ctl-dist">
+        <option value="blobs" selected>Gaussian blobs</option>
+        <option value="rings">Concentric rings</option>
+        <option value="moons">Two moons</option>
+        <option value="anisotropic">Anisotropic blobs</option>
+        <option value="uniform">Uniform random</option>
+        <option value="spiral">Pinwheel / spiral</option>
+      </select>
+    </label>
+    <label>Points: <span id="lbl-n">400</span>
+      <input id="ctl-n" type="range" min="50" max="100000" step="50" value="400">
+    </label>
+    <label>Clusters (k): <span id="lbl-k">4</span>
+      <input id="ctl-k" type="range" min="2" max="8" step="1" value="4">
+    </label>
+    <label>Init:
+      <select id="ctl-init">
+        <option value="kpp" selected>k-means++</option>
+        <option value="random">random</option>
+      </select>
+    </label>
+    <label>Max iter: <span id="lbl-maxiter">20</span>
+      <input id="ctl-maxiter" type="range" min="1" max="1000" step="1" value="20">
+    </label>
+    <label>Speed (fps): <span id="lbl-speed">3</span>
+      <input id="ctl-speed" type="range" min="0.5" max="8" step="0.5" value="3">
+    </label>
+    <div style="display:flex;flex-wrap:wrap;gap:var(--spacing-8);margin-top:var(--spacing-8);">
+      <button id="btn-generate">Generate</button>
+      <button id="btn-fit">Run K-Means</button>
+      <button id="btn-step" disabled>Step</button>
+      <button id="btn-pause" disabled>Pause</button>
+      <button id="btn-reset" disabled>Reset</button>
+    </div>
+    <p id="demo-status" style="margin-top:var(--spacing-8);">Loading WebAssembly module…</p>
+    <p id="race-result" class="race-result"></p>
+  </aside>
+
+  <!-- RIGHT: visual + inertia -->
+  <section class="demo-visual">
+    <div class="demo-canvas-wrap">
+      <canvas id="demo-canvas" width="480" height="480"></canvas>
+    </div>
+    <div class="inertia-wrap">
+      <h5 style="margin: var(--spacing-8) 0; font-size: var(--text-body-sm); letter-spacing: 0.03em; text-transform: uppercase; color: var(--color-gunmetal-gray);">Inertia per iteration</h5>
+      <canvas id="inertia-canvas" width="480" height="120"></canvas>
+    </div>
+  </section>
 </div>
-
-<div class="demo-inertia-wrap">
-  <p>Inertia per iteration</p>
-  <canvas id="inertia-canvas" width="280" height="120"></canvas>
-</div>
-
-<p id="race-result" class="race-result"></p>
-
-<div class="demo-controls">
-  <label>Points: <span id="lbl-n">400</span>
-    <input id="ctl-n" type="range" min="50" max="2000" step="50" value="400">
-  </label>
-  <label>Clusters (k): <span id="lbl-k">4</span>
-    <input id="ctl-k" type="range" min="2" max="8" step="1" value="4">
-  </label>
-  <label>Init:
-    <select id="ctl-init">
-      <option value="kpp" selected>k-means++</option>
-      <option value="random">random</option>
-    </select>
-  </label>
-  <label>Distribution:
-    <select id="ctl-dist">
-      <option value="blobs" selected>Gaussian blobs</option>
-      <option value="rings">Concentric rings</option>
-      <option value="moons">Two moons</option>
-      <option value="anisotropic">Anisotropic blobs</option>
-      <option value="uniform">Uniform random</option>
-      <option value="spiral">Pinwheel / spiral</option>
-    </select>
-  </label>
-  <label>Max iter: <span id="lbl-maxiter">20</span>
-    <input id="ctl-maxiter" type="range" min="1" max="50" step="1" value="20">
-  </label>
-  <label>Speed (fps): <span id="lbl-speed">3</span>
-    <input id="ctl-speed" type="range" min="0.5" max="8" step="0.5" value="3">
-  </label>
-  <button id="btn-generate">Generate</button>
-  <button id="btn-fit">Run K-Means</button>
-  <button id="btn-step" disabled>Step</button>
-  <button id="btn-pause" disabled>Pause</button>
-  <button id="btn-reset" disabled>Reset</button>
-</div>
-
-<p id="demo-status">Loading WebAssembly module…</p>
 
 <script type="module" src="{{ '/assets/js/demo.js' | relative_url }}"></script>
 

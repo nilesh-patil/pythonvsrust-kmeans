@@ -317,14 +317,21 @@ function drawFrame(canvas, ctx, points, snapshot) {
 
   if (!points) return;
 
-  // draw points
+  // Batched Path2D render: one path per cluster colour, single fill() per cluster
+  const radius = n > 5000 ? 1.5 : 3;
+  const pathByCluster = new Map();
   for (let i = 0; i < n; i++) {
+    const c = snapshot ? snapshot.labels[i] : -1;
+    let path = pathByCluster.get(c);
+    if (!path) { path = new Path2D(); pathByCluster.set(c, path); }
     const x = points[2 * i]     * W;
     const y = points[2 * i + 1] * H;
-    ctx.fillStyle = snapshot ? PALETTE[snapshot.labels[i] % PALETTE.length] : "#9ca3af";
-    ctx.beginPath();
-    ctx.arc(x, y, 3, 0, 2 * Math.PI);
-    ctx.fill();
+    path.moveTo(x + radius, y);
+    path.arc(x, y, radius, 0, 2 * Math.PI);
+  }
+  for (const [c, path] of pathByCluster) {
+    ctx.fillStyle = c === -1 ? "#9ca3af" : PALETTE[c % PALETTE.length];
+    ctx.fill(path);
   }
 
   if (!snapshot) return;
@@ -533,18 +540,24 @@ function fitWithSteps() {
   snapshots = parsed.snapshots;
   currentFrame = 0;
 
-  // JS race — same seed, same data
-  const t0js = performance.now();
-  kmeansJs(points, n, 2, k, maxIter, runSeed, useKpp);
-  const t1js = performance.now();
-
   const wasmMs = (t1wasm - t0wasm).toFixed(1);
-  const jsMs   = (t1js   - t0js  ).toFixed(1);
-  const ratio  = (t1js - t0js) / Math.max(t1wasm - t0wasm, 0.01);
-  raceDiv.innerHTML =
-    `<span class="rust">WASM: ${wasmMs} ms</span> · ` +
-    `<span class="js">JS: ${jsMs} ms</span>` +
-    ` (${ratio.toFixed(1)}× faster)`;
+
+  // JS race — skip when n × max_iter > 5,000,000 (too slow to block main thread)
+  if (n * maxIter > 5_000_000) {
+    raceDiv.innerHTML =
+      `<span class="rust">WASM: ${wasmMs} ms</span> · JS: skipped (n×iter too large)`;
+  } else {
+    const t0js = performance.now();
+    kmeansJs(points, n, 2, k, maxIter, runSeed, useKpp);
+    const t1js = performance.now();
+
+    const jsMs  = (t1js - t0js).toFixed(1);
+    const ratio = (t1js - t0js) / Math.max(t1wasm - t0wasm, 0.01);
+    raceDiv.innerHTML =
+      `<span class="rust">WASM: ${wasmMs} ms</span> · ` +
+      `<span class="js">JS: ${jsMs} ms</span>` +
+      ` (${ratio.toFixed(1)}× faster)`;
+  }
 
   const convergenceNote = parsed.converged ? `converged in ${parsed.iterCount} iter` : `max ${parsed.iterCount} iter`;
   setStatus(`n=${n}, k=${k}, ${convergenceNote}. Playing…`);
