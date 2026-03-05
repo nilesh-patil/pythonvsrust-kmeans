@@ -81,39 +81,37 @@ title: Overview
   </div>
 </div>
 
-## What you'll find here
+Rust is 5.17× faster than Python on the mean runtime across the full 336-configuration sweep. scikit-learn sits in between — 3.46× faster than Python — but the memory picture inverts sharply: sklearn uses 12× more peak memory than Rust (47.88 MB/1k samples vs 0.83 MB/1k samples). The speed headline comes with a quality caveat. sklearn achieves ARI = 1.00 on every measured run; Rust averages 0.66, with a worst-case of 0.35.
 
-<div class="feature-grid">
-  <a class="card" href="{{ '/algorithms/' | relative_url }}" style="border-bottom: none;">
-    <h4>Algorithms →</h4>
-    <p>k-means++ vs random initialization, animated — including k-means' two classic failure modes (moons and rings).</p>
-  </a>
-  <a class="card" href="{{ '/parallel/' | relative_url }}" style="border-bottom: none;">
-    <h4>Parallelism →</h4>
-    <p>Adding Rayon to the Rust implementation: how the parallel update step works, and what it bought us on a 14-core machine.</p>
-  </a>
-  <a class="card" href="{{ '/benchmarks/' | relative_url }}" style="border-bottom: none;">
-    <h4>Benchmarks →</h4>
-    <p>Interactive Plotly dashboard across runtime, memory, internal quality (silhouette / Davies-Bouldin), and external quality (ARI / NMI).</p>
-  </a>
-  <a class="card" href="{{ '/demo/' | relative_url }}" style="border-bottom: none;">
-    <h4>Live demo →</h4>
-    <p>Run the Rust K-Means in your browser via WebAssembly — six point distributions, step-by-step animation, WASM-vs-JS speed race.</p>
-  </a>
-</div>
+## Runtime: speed wins, but scaling exposes a different story
 
-## The headline numbers
+![Speedup over Python](assets/images/speedup_curve.png)
 
-![Implementation comparison](assets/images/analysis.png)
+Rust's lead over Python is largest at small n. At n = 1 000, Rust finishes in 0.05 s vs Python's 0.86 s — a 17× gap. At n = 128 000, the gap narrows to 4.83× (38.64 s vs 186.74 s). The scaling exponents explain why: Python 0.71, Rust 1.06, sklearn 0.29.
 
-| Metric                    | <span class="lang-py">Python</span> | <span class="lang-rust">Rust</span> | <span class="lang-rust-par">Rust&nbsp;-&nbsp;Parallel</span> | <span class="lang-sklearn">scikit-learn</span> |
-|---------------------------|:---:|:---:|:---:|:---:|
-| Mean runtime              | slowest | **fastest** (5.2×) | comparable | 3.5× |
-| Mean MB / 1k samples      | moderate | **0.83** (lowest) | 1.3 | 47.9 (highest) |
-| Silhouette @ k=k_true     | 0.67 | 0.61 | 0.61 | **0.93** |
-| Adjusted Rand Index       | 0.74 | 0.66 | 0.66 | **1.00** |
+sklearn's sub-linear exponent reflects BLAS vectorisation — matrix operations that amortise well as n grows; Rust's clean Lloyd's loop does not share that property. The practical consequence is direct: at n = 128 000, Rust (38.64 s) is already slower than sklearn (30.06 s) on the mean. That inverts the headline for large-scale workloads.
 
-(Numbers are from the latest 48-experiment quick benchmark. See the [Benchmarks](benchmarks/) page for the full sweep.)
+## Memory: Rust is in a different league
+
+![Memory footprint and scaling](assets/images/memory_breakdown.png)
+
+Mean peak memory per 1 000 samples: Rust 0.83 MB, Python 25.18 MB, sklearn 47.88 MB. The absolute ranges across all configurations tell the same story — Rust 0.03–234.47 MB, Python 67.92–2 361.45 MB.
+
+The mechanism is straightforward. NumPy-based implementations hold full n×d distance matrices in float64 on every assignment step; Rust's flat `Vec<f64>` plus per-iteration centroid accumulators is essentially the whole footprint. sklearn's high per-sample rate reflects both the distance matrices and the overhead from running 10 restarts by default.
+
+## Quality: the gap is in the init scheme, not the algorithm
+
+![Quality–runtime Pareto](assets/images/quality_runtime_pareto.png)
+
+Mean ARI: sklearn 1.00, Python 0.74, Rust 0.66 — and Rust-Parallel is bit-identical to Rust at 0.66. The Davies-Bouldin contrast is sharper: sklearn 0.09 vs Rust 1.96, a 22× gap.
+
+The cause is initialisation, not the underlying Lloyd's loop. sklearn defaults to `n_init=10` with k-means++ seeding — ten restarts, best inertia kept. The custom implementations use a single random seed per run. The `--init k-means++` flag is available, but without multiple restarts it only partially closes the gap; a single draw from the k-means++ distribution still occasionally lands in a poor local optimum. That is the floor on their ARI.
+
+## Parallel Rust: not yet pulling its weight
+
+At n = 8 000 — the largest point in the 2026 benchmark grid — Rust-Parallel is 1.56× slower than serial Rust. Thread-spawn overhead dominates at these dataset sizes. The cross-over point where parallelism becomes net positive is unmeasured; the tested grid does not go large enough to observe it.
+
+Two changes would likely shift that cross-over down: a flat `Vec<f64>` data layout (the current `Vec<DataPoint { features: Vec<f64> }>` incurs pointer-chasing on every distance call) and a benchmark grid extended to n ≥ 100 000. Until those land, the parallel binary is a proof-of-concept rather than a production path.
 
 <div class="cta-strip">
   <h2>Open the live demo.</h2>
