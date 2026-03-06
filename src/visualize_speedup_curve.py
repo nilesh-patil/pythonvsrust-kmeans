@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-Speedup-vs-scale log-log curves.
-
-Primary data: benchmark_results_20250608_153059.csv (8 n_samples points).
-Augmented with Rust-Parallel from benchmark_results_20260518_003517.csv
-wherever the n_samples grids overlap (1k–8k).
-"""
+"""Speedup-vs-scale log-log curves from the newest benchmark CSV."""
 
 from __future__ import annotations
 
@@ -14,103 +8,103 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+try:
+    from viz_style import color, display_name, mpl_marker, ordered_implementations
+except ImportError:
+    from src.viz_style import color, display_name, mpl_marker, ordered_implementations
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CSV_2025 = REPO_ROOT / "results" / "benchmark_results_20250608_153059.csv"
-CSV_2026 = REPO_ROOT / "results" / "benchmark_results_20260518_003517.csv"
 OUT_PATH = REPO_ROOT / "results" / "speedup_curve.png"
 
-# Unified palette — Python omitted from plot (it's the baseline denominator).
-PALETTE: dict[str, str] = {
-    "rust": "#CE422B",
-    "rust_parallel": "#A0522D",
-    "sklearn": "#F7931E",
-}
-LABELS: dict[str, str] = {
-    "rust": "Rust (serial)",
-    "rust_parallel": "Rust (Parallel)",
-    "sklearn": "scikit-learn",
-}
+
+def latest_csv_with_columns(results_dir: Path, required_columns: set[str]) -> Path:
+    """Return newest benchmark CSV containing every required column."""
+    candidates = sorted(
+        results_dir.glob("benchmark_results_*.csv"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate in candidates:
+        columns = set(pd.read_csv(candidate, nrows=0).columns)
+        if required_columns.issubset(columns):
+            return candidate
+    raise FileNotFoundError(
+        f"No benchmark_results_*.csv in {results_dir} contains {sorted(required_columns)}"
+    )
+
+
+def add_workload_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "wall_time_s" not in out.columns:
+        out["wall_time_s"] = out["runtime"]
+    if "k_max" not in out.columns:
+        out["k_max"] = out["n_clusters"]
+    out["k_sweep_sum_k"] = out["k_max"] * (out["k_max"] + 1) / 2
+    out["nominal_work_units"] = out["n_samples"] * out["n_features"] * out["k_sweep_sum_k"]
+    return out
 
 
 def median_runtime_pivot(df: pd.DataFrame) -> pd.DataFrame:
-    """Return a (n_samples × implementation) pivot of median runtimes."""
+    """Return a (nominal workload x implementation) pivot of median runtimes."""
     return (
-        df.groupby(["n_samples", "implementation"])["runtime"]
+        df.groupby(["nominal_work_units", "implementation"])["wall_time_s"]
         .median()
         .unstack("implementation")
+        .sort_index()
     )
 
 
 def main() -> None:
-    df25 = pd.read_csv(CSV_2025)
-    df26 = pd.read_csv(CSV_2026)
+    csv_path = latest_csv_with_columns(
+        REPO_ROOT / "results",
+        {"runtime", "implementation", "n_samples", "n_features", "n_clusters"},
+    )
+    df = add_workload_columns(pd.read_csv(csv_path))
 
-    pivot25 = median_runtime_pivot(df25)
-    python_baseline = pivot25["python"]
+    pivot = median_runtime_pivot(df)
+    python_baseline = pivot["python"]
 
-    # Compute speedup ratios for the two implementations present in 2025 CSV.
-    speedup25: dict[str, pd.Series] = {}
-    for impl in ("rust", "sklearn"):
-        if impl in pivot25.columns:
-            speedup25[impl] = python_baseline / pivot25[impl]
-
-    # Rust-Parallel from 2026 CSV — only include n_samples that overlap with
-    # the Python baseline from 2025 (both have 1k–8k, so overlap exists).
-    pivot26 = median_runtime_pivot(df26)
-    overlap = pivot25.index.intersection(pivot26.index)
-    rust_par_speedup: pd.Series | None = None
-    if "rust_parallel" in pivot26.columns and len(overlap) > 0:
-        rust_par_speedup = python_baseline.loc[overlap] / pivot26.loc[overlap, "rust_parallel"]
+    speedups: dict[str, pd.Series] = {}
+    for impl in ordered_implementations(pivot.columns):
+        if impl != "python":
+            speedups[str(impl)] = python_baseline / pivot[impl]
 
     # --- Plot -----------------------------------------------------------
     fig, ax = plt.subplots(figsize=(9, 5.5))
 
-    for impl, series in speedup25.items():
+    for impl, series in speedups.items():
         ax.plot(
             series.index,
             series.values,
-            marker="o",
+            marker=mpl_marker(impl),
             markersize=6,
             lw=2,
-            color=PALETTE[impl],
-            label=LABELS[impl],
-        )
-
-    if rust_par_speedup is not None:
-        ax.plot(
-            rust_par_speedup.index,
-            rust_par_speedup.values,
-            marker="s",
-            markersize=6,
-            lw=2,
-            color=PALETTE["rust_parallel"],
-            label=LABELS["rust_parallel"],
+            color=color(impl),
+            label=display_name(impl),
         )
 
     # Reference line: y = 1 means "same speed as Python".
     ax.axhline(1.0, ls="--", lw=1.2, color="#888888", alpha=0.8, label="Python baseline (1×)")
 
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("n_samples", fontsize=11)
-    ax.set_ylabel("Speedup over pure-Python  (higher is better)", fontsize=11)
-    ax.set_title("Speedup over pure-Python by dataset size", fontsize=13, fontweight="bold")
-
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log", base=2)
+    ax.set_xlabel("Nominal k-sweep work: n_samples x n_features x sum(k)  (log2)", fontsize=11)
+    ax.set_ylabel("Speedup over pure-Python  (log2 scale, higher is better)", fontsize=11)
     subtitle = (
-        f"Primary: {CSV_2025.name} ({len(df25)} rows) · "
-        f"Rust-Parallel: {CSV_2026.name} ({len(df26)} rows)"
+        f"Source: {csv_path.name} ({len(df)} rows) · "
+        "end-to-end CLI k-sweep runtime · three paired repeats per workload"
     )
-    ax.text(
-        0.5, 1.01,
+    fig.suptitle("Speedup over pure-Python by matched workload", fontsize=13, fontweight="bold", y=0.99)
+    fig.text(
+        0.5, 0.935,
         subtitle,
-        transform=ax.transAxes,
         ha="center", va="bottom",
         fontsize=8, color="#666666",
     )
 
     ax.grid(True, which="both", ls=":", alpha=0.5)
     ax.legend(fontsize=9)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")

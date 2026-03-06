@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-Two-panel memory chart:
-  Left  — bar chart of MB / 1k samples per implementation (mean), annotated.
-  Right — log-log line chart of peak_memory_mb vs n_samples (median per cell).
-
-Uses benchmark_results_20250608_153059.csv (2025, three impls, 8 n_samples).
-"""
+"""Tufte-style sampled-RSS memory views from the newest benchmark CSV."""
 
 from __future__ import annotations
 
@@ -15,56 +9,97 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+try:
+    from viz_style import (
+        color,
+        display_name,
+        mpl_marker,
+        ordered_implementations,
+    )
+except ImportError:
+    from src.viz_style import (
+        color,
+        display_name,
+        mpl_marker,
+        ordered_implementations,
+    )
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CSV_2025 = REPO_ROOT / "results" / "benchmark_results_20250608_153059.csv"
 OUT_PATH = REPO_ROOT / "results" / "memory_breakdown.png"
 
-PALETTE: dict[str, str] = {
-    "python": "#3776AB",
-    "rust": "#CE422B",
-    "sklearn": "#F7931E",
-}
-LABELS: dict[str, str] = {
-    "python": "Python",
-    "rust": "Rust",
-    "sklearn": "scikit-learn",
-}
-# Consistent render order across both panels.
-IMPL_ORDER = ["python", "rust", "sklearn"]
+
+def latest_csv_with_columns(results_dir: Path, required_columns: set[str]) -> Path:
+    """Return newest benchmark CSV containing every required column."""
+    candidates = sorted(
+        results_dir.glob("benchmark_results_*.csv"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate in candidates:
+        columns = set(pd.read_csv(candidate, nrows=0).columns)
+        if required_columns.issubset(columns):
+            return candidate
+    raise FileNotFoundError(
+        f"No benchmark_results_*.csv in {results_dir} contains {sorted(required_columns)}"
+    )
+
+
+def add_workload_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "peak_rss_mb" not in out.columns:
+        out["peak_rss_mb"] = out["peak_memory_mb"]
+    if "k_max" not in out.columns:
+        out["k_max"] = out["n_clusters"]
+    out["k_sweep_sum_k"] = out["k_max"] * (out["k_max"] + 1) / 2
+    out["nominal_work_units"] = out["n_samples"] * out["n_features"] * out["k_sweep_sum_k"]
+    out["rss_mb_per_1k_samples"] = out["peak_rss_mb"] / (out["n_samples"] / 1000.0)
+    return out
 
 
 def main() -> None:
-    df = pd.read_csv(CSV_2025)
+    csv_path = latest_csv_with_columns(
+        REPO_ROOT / "results",
+        {"peak_memory_mb", "implementation", "n_samples", "n_features", "n_clusters"},
+    )
+    df = add_workload_columns(pd.read_csv(csv_path))
 
-    # Left panel: MB per 1k samples = peak_memory_mb / (n_samples / 1000).
-    # Use the mean across all rows for each implementation.
-    df["mem_per_1k"] = df["peak_memory_mb"] / (df["n_samples"] / 1000.0)
-    bar_data = (
-        df.groupby("implementation")["mem_per_1k"]
-        .mean()
-        .reindex(IMPL_ORDER)
-        .dropna()
+    impl_order = ordered_implementations(df["implementation"].unique())
+    largest_work = df["nominal_work_units"].max()
+    dot_data = (
+        df[df["nominal_work_units"] == largest_work]
+        .groupby("implementation")["rss_mb_per_1k_samples"]
+        .median()
+        .sort_values()
     )
 
-    # Right panel: median peak_memory_mb per (implementation, n_samples).
+    # Right panel: median sampled RSS per matched nominal workload.
     line_data = (
-        df.groupby(["implementation", "n_samples"])["peak_memory_mb"]
+        df.groupby(["implementation", "nominal_work_units"])["peak_rss_mb"]
         .median()
         .unstack("implementation")
+        .sort_index()
     )
 
-    fig, (ax_bar, ax_line) = plt.subplots(1, 2, figsize=(12, 5.5))
+    fig, (ax_dot, ax_line) = plt.subplots(1, 2, figsize=(12, 5.5))
 
-    # ---- Left: bar chart ------------------------------------------------
-    impls = list(bar_data.index)
+    # ---- Left: dot chart ------------------------------------------------
+    impls = list(dot_data.index)
     x = np.arange(len(impls))
-    colors = [PALETTE[i] for i in impls]
-    bars = ax_bar.bar(x, bar_data.values, color=colors, width=0.55, zorder=3)
-
-    for bar, val in zip(bars, bar_data.values):
-        ax_bar.text(
-            bar.get_x() + bar.get_width() / 2.0,
-            bar.get_height() + bar_data.values.max() * 0.02,
+    for idx, (impl, val) in enumerate(zip(impls, dot_data.values)):
+        ax_dot.scatter(
+            idx,
+            val,
+            s=90,
+            marker=mpl_marker(impl),
+            color=color(impl),
+            edgecolor="white",
+            linewidth=0.8,
+            zorder=3,
+            label=display_name(impl),
+        )
+        ax_dot.text(
+            idx,
+            val * 1.12,
             f"{val:.2f} MB",
             ha="center",
             va="bottom",
@@ -72,41 +107,42 @@ def main() -> None:
             fontweight="bold",
         )
 
-    ax_bar.set_xticks(x)
-    ax_bar.set_xticklabels([LABELS.get(i, i) for i in impls], fontsize=10)
-    ax_bar.set_ylabel("Peak memory  (MB / 1k samples)", fontsize=10)
-    ax_bar.set_title("Memory per 1 000 samples\n(lower is better)", fontsize=11)
-    ax_bar.grid(axis="y", ls=":", alpha=0.5, zorder=0)
+    ax_dot.set_xticks(x)
+    ax_dot.set_xticklabels([display_name(i) for i in impls], fontsize=10)
+    ax_dot.set_yscale("log", base=2)
+    ax_dot.set_ylabel("Sampled RSS  (MB / 1k samples, log2)", fontsize=10)
+    ax_dot.set_title("RSS per 1 000 samples at largest matched workload\n(lower is better)", fontsize=11)
+    ax_dot.grid(axis="y", ls=":", alpha=0.5, zorder=0)
 
     # ---- Right: log-log line chart --------------------------------------
-    for impl in IMPL_ORDER:
+    for impl in impl_order:
         if impl not in line_data.columns:
             continue
         series = line_data[impl].dropna()
         ax_line.plot(
             series.index,
             series.values,
-            marker="o",
+            marker=mpl_marker(impl),
             markersize=5,
             lw=2,
-            color=PALETTE[impl],
-            label=LABELS.get(impl, impl),
+            color=color(impl),
+            label=display_name(impl),
         )
 
-    ax_line.set_xscale("log")
-    ax_line.set_yscale("log")
-    ax_line.set_xlabel("n_samples", fontsize=10)
-    ax_line.set_ylabel("Peak memory  (MB, median)", fontsize=10)
-    ax_line.set_title("Memory scaling vs dataset size\n(log-log)", fontsize=11)
+    ax_line.set_xscale("log", base=2)
+    ax_line.set_yscale("log", base=2)
+    ax_line.set_xlabel("Nominal k-sweep work  (log2)", fontsize=10)
+    ax_line.set_ylabel("Sampled RSS  (MB, median, log2)", fontsize=10)
+    ax_line.set_title("Sampled RSS vs matched workload\n(log-log)", fontsize=11)
     ax_line.grid(True, which="both", ls=":", alpha=0.5)
     ax_line.legend(fontsize=9)
 
     # ---- Shared title + subtitle ----------------------------------------
-    fig.suptitle("Memory footprint and scaling", fontsize=14, fontweight="bold", y=1.01)
-    subtitle = f"Source: {CSV_2025.name}  ·  {len(df)} rows"
-    fig.text(0.5, 1.0, subtitle, ha="center", va="bottom", fontsize=8, color="#666666")
+    fig.suptitle("Memory footprint and scaling", fontsize=14, fontweight="bold", y=0.99)
+    subtitle = f"Source: {csv_path.name}  ·  {len(df)} rows  ·  process RSS sampled every 10 ms"
+    fig.text(0.5, 0.91, subtitle, ha="center", va="bottom", fontsize=8, color="#666666")
 
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.84))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")

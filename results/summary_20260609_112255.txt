@@ -1,0 +1,100 @@
+K-Means Clustering Benchmark Summary
+============================================================
+Total experiments: 648
+Timestamp: 2026-06-09 11:22:55
+
+
+PYTHON Implementation:
+----------------------------------------
+Performance Metrics:
+  Median wall time: 0.806 seconds
+  IQR wall time: 2.274 seconds
+  Median sampled RSS: 104.9 MB
+  Median RSS / 1k samples: 7.41 MB
+  Median CPU time: 0.737 seconds
+  Median effective cores: 0.91
+  Average CPU usage: 92.5%
+  Max CPU usage: 139.9%
+  Median throughput: 11657 samples/sec
+  Median nominal work throughput: 15538872 units/sec
+
+Clustering Quality Metrics:
+  Average inertia: 343978.11
+  Average silhouette score: 0.917
+  Average Davies-Bouldin index: 0.175
+  Average Calinski-Harabasz index: 2126344.05
+
+SKLEARN Implementation:
+----------------------------------------
+Performance Metrics:
+  Median wall time: 1.843 seconds
+  IQR wall time: 1.322 seconds
+  Median sampled RSS: 206.9 MB
+  Median RSS / 1k samples: 12.63 MB
+  Median CPU time: 1.828 seconds
+  Median effective cores: 0.95
+  Average CPU usage: 104.5%
+  Max CPU usage: 353.3%
+  Median throughput: 8425 samples/sec
+  Median nominal work throughput: 9249935 units/sec
+
+Clustering Quality Metrics:
+  Average inertia: 202963.86
+  Average silhouette score: 0.933
+  Average Davies-Bouldin index: 0.096
+  Average Calinski-Harabasz index: 2667463.62
+
+RUST Implementation:
+----------------------------------------
+Performance Metrics:
+  Median wall time: 0.201 seconds
+  IQR wall time: 1.012 seconds
+  Median sampled RSS: 9.3 MB
+  Median RSS / 1k samples: 0.61 MB
+  Median CPU time: 0.187 seconds
+  Median effective cores: 0.90
+  Average CPU usage: 94.5%
+  Max CPU usage: 128.7%
+  Median throughput: 47713 samples/sec
+  Median nominal work throughput: 69712016 units/sec
+
+Clustering Quality Metrics:
+  Average inertia: 335991.60
+  Average silhouette score: 0.915
+  Average Davies-Bouldin index: 0.193
+  Average Calinski-Harabasz index: 1888088.51
+
+RUST_PARALLEL Implementation:
+----------------------------------------
+Performance Metrics:
+  Median wall time: 0.197 seconds
+  IQR wall time: 0.814 seconds
+  Median sampled RSS: 12.0 MB
+  Median RSS / 1k samples: 0.73 MB
+  Median CPU time: 0.472 seconds
+  Median effective cores: 1.87
+  Average CPU usage: 261.0%
+  Max CPU usage: 671.9%
+  Median throughput: 59715 samples/sec
+  Median nominal work throughput: 78587025 units/sec
+
+Clustering Quality Metrics:
+  Average inertia: 335991.60
+  Average silhouette score: 0.915
+  Average Davies-Bouldin index: 0.193
+  Average Calinski-Harabasz index: 1888088.51
+
+
+COMPARISON SUMMARY
+============================================================
+
+Speedup relative to Python implementation:
+  SKLEARN: 0.44x faster by median wall time
+  RUST: 4.02x faster by median wall time
+  RUST_PARALLEL: 4.09x faster by median wall time
+
+Memory efficiency (MB per 1000 samples):
+  PYTHON: 7.41 MB/1k samples (median sampled RSS)
+  SKLEARN: 12.63 MB/1k samples (median sampled RSS)
+  RUST: 0.61 MB/1k samples (median sampled RSS)
+  RUST_PARALLEL: 0.73 MB/1k samples (median sampled RSS)

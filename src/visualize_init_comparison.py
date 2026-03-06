@@ -86,9 +86,9 @@ def main() -> None:
     ax.set_xticks(x)
     ax.set_xticklabels([f"{n}\n(n={s:,}, d={d}, k={k})"
                         for (n, s, d, k) in DATASETS])
-    ax.set_ylabel("Mean inertia (lower is better)")
+    ax.set_ylabel("Mean inertia (log2 scale, lower is better)")
     ax.set_title(f"K-Means initialization comparison · {N_RUNS} seeds per bar")
-    ax.set_yscale("log")
+    ax.set_yscale("log", base=2)
     ax.legend()
     ax.grid(axis="y", linestyle=":", alpha=0.6)
 

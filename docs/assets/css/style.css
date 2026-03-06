@@ -21,10 +21,10 @@
   --surface-stone:    #e9eaeb;
 
   /* Implementation accents (kept restrained — used only on stat labels) */
-  --impl-python:        #3776AB;
-  --impl-rust:          #CE422B;
-  --impl-rust-parallel: #A0522D;
-  --impl-sklearn:       #F7931E;
+  --impl-python:        #0072B2;
+  --impl-rust:          #D55E00;
+  --impl-rust-parallel: #CC79A7;
+  --impl-sklearn:       #009E73;
 
   /* Spacing — 4 px base */
   --spacing-4:  4px;

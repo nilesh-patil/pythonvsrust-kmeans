@@ -3,6 +3,7 @@
 
 # Local screenshots / scratch artefacts from devtools verification
 .live-*.png
+.playwright-cli/
 /tmp/
 
 # Data

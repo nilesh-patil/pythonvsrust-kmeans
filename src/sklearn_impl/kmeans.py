@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-K-Means Clustering Implementation
-Pure Python implementation using only numpy and pandas (no scikit-learn)
+K-Means clustering CLI wrapper around scikit-learn.
 """
 
 import argparse
@@ -24,6 +23,7 @@ def parse_arguments():
     parser.add_argument('--k_clusters_max', type=int, required=True, help='Number of max clusters')
     parser.add_argument('--random_state', type=int, default=42, help='Random seed')
     parser.add_argument('--id_column', type=str, default='ID', help='ID column name')
+    parser.add_argument('--n_init', type=int, default=10, help='Number of sklearn KMeans restarts')
     
     return parser.parse_args()
 
@@ -75,7 +75,7 @@ def load_data(filepath: str, id_column: str) -> Tuple[pd.DataFrame, np.ndarray, 
     return df, X, id_df
 
 
-def run_kmeans_multiple_k(X: np.ndarray, k_max: int, random_state: int) -> dict:
+def run_kmeans_multiple_k(X: np.ndarray, k_max: int, random_state: int, n_init: int = 10) -> dict:
     """
     Run k-means for multiple values of k
     
@@ -91,8 +91,7 @@ def run_kmeans_multiple_k(X: np.ndarray, k_max: int, random_state: int) -> dict:
     
     for k in range(1, min(k_max + 1, X.shape[0] + 1)):
         print(f"Running k-means with k={k}...")
-        kmeans = KMeans(n_clusters=k, random_state=random_state, n_init=10)
-        kmeans.fit(X)
+        kmeans = KMeans(n_clusters=k, random_state=random_state, n_init=n_init)
         results[k] = kmeans.fit_predict(X)
     
     return results
@@ -140,6 +139,7 @@ def main():
     print(f"Max clusters: {args.k_clusters_max}")
     print(f"ID column: {args.id_column}")
     print(f"Random state: {args.random_state}")
+    print(f"n_init: {args.n_init}")
     print("=" * 40)
     
     # Load data
@@ -149,7 +149,7 @@ def main():
     
     # Run k-means for multiple k values
     print(f"\nRunning k-means for k=1 to k={args.k_clusters_max}...")
-    results = run_kmeans_multiple_k(X, args.k_clusters_max, args.random_state)
+    results = run_kmeans_multiple_k(X, args.k_clusters_max, args.random_state, args.n_init)
     
     # Save results
     print("\nSaving results...")

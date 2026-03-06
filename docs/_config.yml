@@ -1,5 +1,5 @@
 title:       "Python vs Rust K-Means"
-description: "A comparative study of K-Means clustering implementations in pure Python, Rust, and scikit-learn — runtime, memory, and clustering quality."
+description: "A comparative study of K-Means clustering execution paths in pure Python, serial Rust, Rayon-parallel Rust, and scikit-learn — runtime, memory, and clustering quality."
 baseurl:     "/pythonvsrust-kmeans"
 url:         ""
 

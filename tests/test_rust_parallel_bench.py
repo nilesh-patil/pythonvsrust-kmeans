@@ -60,5 +60,5 @@ def test_dashboard_color_map_includes_rust_parallel():
     )
     color = IMPL_COLORS["rust_parallel"]
     assert color.startswith("#") and len(color) == 7, (
-        f"Expected a 7-char hex color like '#A0522D', got {color!r}"
+        f"Expected a 7-char hex color, got {color!r}"
     )

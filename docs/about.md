@@ -29,7 +29,7 @@ title: About
   </div>
   <div class="card">
     <h5>WASM K-Means</h5>
-    <p><a href="https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/src/wasm_impl">src/wasm_impl/</a> — separate Cargo crate compiled to a 27 KB browser module.</p>
+    <p><a href="https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/src/wasm_impl">src/wasm_impl/</a> — separate Cargo crate compiled to a 26.5 KB browser module.</p>
   </div>
 </div>
 
@@ -40,14 +40,21 @@ title: About
 pixi install
 pixi run build-rust
 
-# Run the benchmark (writes results/benchmark_results_*.csv and labels)
-pixi run python runner.py --quick
+# Run the fresh paired benchmark (writes results/benchmark_results_*.csv and labels)
+pixi run python src/run_current_benchmark_suite.py \
+  --output results/benchmark_results_20260609_112255.csv
 
 # Refresh derived artifacts
 pixi run python src/visualize_init_comparison.py
+pixi run python src/visualize_speedup_curve.py
+pixi run python src/visualize_memory_breakdown.py
+pixi run python src/visualize_quality_runtime_pareto.py
+pixi run python src/bench_parallel_scaling.py \
+  --n_sample_grid 1000,2000,4000,8000,16000,32000,64000,128000,256000 \
+  --n_features 32 --n_clusters 32 --k_max 32 --runs 3
 pixi run python src/visualize_parallel_scaling.py
 pixi run python src/animate_convergence.py
-pixi run python src/build_dashboard.py
+pixi run python src/build_dashboard.py --input results/benchmark_results_20260609_112255.csv
 pixi run python src/sync_assets.py
 
 # Build the WASM module

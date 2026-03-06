@@ -58,3 +58,12 @@ def test_demo_page_references_wasm():
     body = (DOCS / "demo.md").read_text()
     assert "kmeans_wasm.js" in body or "kmeans_wasm" in body
     assert "<canvas" in body
+
+
+def test_benchmark_page_names_cli_subprocess_scope():
+    """The benchmark page must not describe subprocess timing as fit-only timing."""
+    body = (DOCS / "benchmarks.md").read_text()
+    assert "including startup, CSV loading, the k sweep, and output CSV writing" in body
+    assert "sampled process-RSS estimate" in body
+    assert "not a platform max-RSS measurement" in body
+    assert "Excludes data loading" not in body

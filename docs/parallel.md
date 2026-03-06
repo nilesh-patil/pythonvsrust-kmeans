@@ -49,18 +49,21 @@ let merged = data
 
 ![parallel scaling](assets/images/parallel_scaling.png)
 
-200 000 points × 32 features × 16 clusters on an Apple M-series, 14 cores:
+The current Rust-only scaling sweep uses k-means++ initialization on fresh `n x 32-feature` datasets with `k_max=32`. The sample axis follows the same log2 doubling sequence as the main benchmark suite, from 1k through 256k rows. Each scale is saved as `results/parallel_scaling_n*.csv`; `results/parallel_scaling.csv` mirrors the 32k slice for compatibility with older tooling.
 
-| Threads | Wall-clock | Speedup vs serial |
-|--------:|-----------:|------------------:|
-| serial  | 3.40 s | 1.00× |
-| 1       | 3.18 s | 1.07× |
-| 2       | 2.95 s | 1.15× |
-| 4       | 2.84 s | 1.20× |
-| 8       | 2.73 s | 1.24× |
-| 14      | 2.74 s | 1.24× |
+| Samples | Serial runtime | Best threads | Best parallel runtime | Best speedup | 8-thread speedup |
+|--------:|---------------:|-------------:|----------------------:|-------------:|-----------------:|
+| 1k | 7.27 ms | 1 | 6.67 ms | 1.09× | 0.93× |
+| 2k | 11.11 ms | 4 | 9.86 ms | 1.13× | 1.02× |
+| 4k | 17.32 ms | 4 | 16.46 ms | 1.05× | 0.93× |
+| 8k | 33.13 ms | 2 | 30.16 ms | 1.10× | 1.04× |
+| 16k | 59.00 ms | 2 | 51.83 ms | 1.14× | 1.10× |
+| 32k | 109.26 ms | 8 | 95.27 ms | 1.15× | 1.15× |
+| 64k | 241.72 ms | 4 | 187.97 ms | 1.29× | 1.28× |
+| 128k | 425.25 ms | 4 | 360.78 ms | 1.18× | 1.15× |
+| 256k | 945.28 ms | 8 | 717.42 ms | 1.32× | 1.32× |
 
-Honest answer: **modest** speedup, plateauing around 4–8 threads.
+Honest answer: **useful but bounded** speedup. The parallel path is noise or a regression on small workloads, becomes helpful around the larger sample counts, and peaks at 1.32× on the 256k-row slice in this sweep.
 
 ## Why not more?
 

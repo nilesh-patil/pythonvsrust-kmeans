@@ -6,14 +6,14 @@
 
 ## Unified Palette
 
-Used consistently across all five scripts:
+Current implementation-level charts use the shared encodings in `src/viz_style.py`:
 
 | Implementation   | Hex       |
 |-----------------|-----------|
-| python          | `#3776AB` |
-| rust (serial)   | `#CE422B` |
-| rust_parallel   | `#A0522D` |
-| sklearn         | `#F7931E` |
+| python          | `#0072B2` |
+| rust (serial)   | `#D55E00` |
+| rust_parallel   | `#CC79A7` |
+| sklearn         | `#009E73` |
 | random_init     | `#d97706` |
 | kpp_init        | `#0ea5e9` |
 
@@ -25,9 +25,9 @@ Used consistently across all five scripts:
 - Add figure-level text at bottom: `"Lower is better · 10 seeds per bar"`.
 
 ### 2. `src/visualize_parallel_scaling.py`
-- Add efficiency curve (speedup / threads) on a twinx right-y axis labeled "Efficiency".
-- Add vertical dashed line at `os.cpu_count()` physical cores, labeled `"physical cores"`.
-- Bump fill_between alpha from 0.18 → 0.30.
+- Keep runtime on a log2 y-axis.
+- Avoid dual y-axes; the single-CSV view gives efficiency its own panel.
+- When `results/parallel_scaling_n*.csv` exists, render the current scale-sweep view: runtime vs sample count, best speedup vs sample count, and large-workload thread curves.
 
 ### 3. `src/animate_convergence.py`
 - Add inset axes (top-right) showing inertia vs iteration as a line plot, updated per frame.
@@ -47,4 +47,4 @@ Used consistently across all five scripts:
 ## Acceptance Criteria
 - All 5 PNG/GIF outputs regenerate without error.
 - `pixi run python -m pytest tests/ -q --no-header` passes completely.
-- No files under `docs/` are modified.
+- Docs and mirrored website assets are refreshed when benchmark inputs change.

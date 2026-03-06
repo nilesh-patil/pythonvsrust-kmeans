@@ -1,385 +1,294 @@
-"""
-analysis_audit.py — Reproducible facts from both benchmark CSVs.
+#!/usr/bin/env python3
+"""Generate a facts inventory for the current benchmark suite.
 
 Run from the repo root:
-    pixi run python src/analysis_audit.py
+    pixi run python src/analysis_audit.py > specs/analysis_facts.md
 
-Outputs structured text that is the authoritative source for specs/analysis_facts.md.
+The report is derived from one benchmark CSV and is intended to keep docs,
+dashboard claims, and quoted numbers tied to the same source artifact.
 """
 
 from __future__ import annotations
 
-import warnings
+import argparse
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 
-# ---------------------------------------------------------------------------
-# Paths (resolved relative to this file's location → repo root)
-# ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).parent.parent
-CSV_2025 = REPO_ROOT / "results" / "benchmark_results_20250608_153059.csv"
-CSV_2026 = REPO_ROOT / "results" / "benchmark_results_20260518_003517.csv"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RESULTS_DIR = REPO_ROOT / "results"
+DEFAULT_CSV = RESULTS_DIR / "benchmark_results_20260609_112255.csv"
 
-# ---------------------------------------------------------------------------
-# Load
-# ---------------------------------------------------------------------------
-df25 = pd.read_csv(CSV_2025)
-df26 = pd.read_csv(CSV_2026)
-
-IMPL_ORDER_25 = ["python", "sklearn", "rust"]
-IMPL_ORDER_26 = ["python", "sklearn", "rust", "rust_parallel"]
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def fmt(v: float, decimals: int = 2) -> str:
-    return f"{v:.{decimals}f}"
+IMPL_ORDER = ["python", "rust", "rust_parallel", "sklearn"]
+DISPLAY_NAMES = {
+    "python": "Python",
+    "rust": "Rust",
+    "rust_parallel": "Rust-Parallel",
+    "sklearn": "scikit-learn",
+}
 
 
-def src(csv: str, filt: str, agg: str) -> str:
-    return f"Source: {csv}, filter `{filt}`, aggregation `{agg}`"
+def fmt(value: float, digits: int = 2) -> str:
+    return f"{value:.{digits}f}"
 
 
-# ===========================================================================
-# SECTION A — Headline runtime ratios (2025 CSV primary, 2026 for parallel)
-# ===========================================================================
-print("=" * 70)
-print("## A. Headline runtime ratios")
-print("=" * 70)
-
-means_25 = {impl: df25.loc[df25["implementation"] == impl, "runtime"].mean()
-            for impl in IMPL_ORDER_25}
-counts_25 = {impl: (df25["implementation"] == impl).sum() for impl in IMPL_ORDER_25}
-
-for impl in IMPL_ORDER_25:
-    n = counts_25[impl]
-    m = means_25[impl]
-    print(f"- Mean runtime, {impl}: **{fmt(m)} s** (n={n} rows, 2025 CSV)")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r}', 'runtime.mean()')}")
-
-py_m  = means_25["python"]
-sk_m  = means_25["sklearn"]
-ru_m  = means_25["rust"]
-
-print()
-print(f"- Rust / Python speed-up (mean ratio): **{fmt(py_m / ru_m, 3)}×**")
-print(f"  {src(CSV_2025.name, 'all', 'mean(python_runtime) / mean(rust_runtime)')}")
-
-print(f"- sklearn / Python speed-up (mean ratio): **{fmt(py_m / sk_m, 3)}×**")
-print(f"  {src(CSV_2025.name, 'all', 'mean(python_runtime) / mean(sklearn_runtime)')}")
-
-print(f"- Rust / sklearn speed-up (mean ratio): **{fmt(sk_m / ru_m, 3)}×**")
-print(f"  {src(CSV_2025.name, 'all', 'mean(sklearn_runtime) / mean(rust_runtime)')}")
-
-# Rust-Parallel from 2026 CSV — compare to rust on the same grid
-rust26    = df26.loc[df26["implementation"] == "rust",          "runtime"].mean()
-rp26      = df26.loc[df26["implementation"] == "rust_parallel", "runtime"].mean()
-n_rust26  = (df26["implementation"] == "rust").sum()
-n_rp26    = (df26["implementation"] == "rust_parallel").sum()
-
-print()
-impl_rust_filt = 'implementation=="rust"'
-impl_rp_filt   = 'implementation=="rust_parallel"'
-print(f"- Mean runtime, rust (2026 CSV):          **{fmt(rust26)} s** (n={n_rust26} rows)")
-print(f"  {src(CSV_2026.name, impl_rust_filt, 'runtime.mean()')}")
-print(f"- Mean runtime, rust_parallel (2026 CSV): **{fmt(rp26)} s** (n={n_rp26} rows)")
-print(f"  {src(CSV_2026.name, impl_rp_filt, 'runtime.mean()')}")
-print(f"- Rust-Parallel / Rust speed-up: **{fmt(rust26 / rp26, 3)}×**")
-print(f"  {src(CSV_2026.name, 'both rust variants', 'mean(rust_runtime) / mean(rust_parallel_runtime)')}")
-
-# Absolute median for robustness callout
-medians_25 = {impl: df25.loc[df25["implementation"] == impl, "runtime"].median()
-              for impl in IMPL_ORDER_25}
-print()
-for impl in IMPL_ORDER_25:
-    print(f"- Median runtime, {impl}: **{fmt(medians_25[impl])} s**")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r}', 'runtime.median()')}")
+def fmt_ints(values: pd.Series | np.ndarray | list[int]) -> str:
+    return ", ".join(f"{int(v):,}" for v in values)
 
 
-# ===========================================================================
-# SECTION B — Scaling behaviour
-# ===========================================================================
-print()
-print("=" * 70)
-print("## B. Scaling behaviour")
-print("=" * 70)
-
-smallest = df25["n_samples"].min()   # 1 000
-largest  = df25["n_samples"].max()   # 128 000
-
-for impl in IMPL_ORDER_25:
-    sub = df25[df25["implementation"] == impl]
-    rt_small = sub.loc[sub["n_samples"] == smallest, "runtime"].mean()
-    rt_large = sub.loc[sub["n_samples"] == largest,  "runtime"].mean()
-    scale_factor = rt_large / rt_small
-    print(f"\n### {impl}")
-    print(f"- Runtime @ n={smallest:,}:   **{fmt(rt_small)} s**")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r} & n_samples=={smallest}', 'runtime.mean()')}")
-    print(f"- Runtime @ n={largest:,}: **{fmt(rt_large)} s**")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r} & n_samples=={largest}', 'runtime.mean()')}")
-    print(f"- Scale factor (large / small): **{fmt(scale_factor, 1)}×**")
-
-    # OLS slope of log(runtime) ~ log(n_samples)
-    log_n = np.log(sub["n_samples"].values.astype(float))
-    log_t = np.log(sub["runtime"].values.astype(float))
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        slope, intercept, r, p, se = stats.linregress(log_n, log_t)
-    print(f"- Log-log OLS slope (complexity exponent): **{fmt(slope, 3)}** (R²={fmt(r**2, 3)})")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r}', 'linregress(log(n_samples), log(runtime)).slope')}")
+def latest_csv(results_dir: Path) -> Path:
+    candidates = sorted(results_dir.glob("benchmark_results_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        raise FileNotFoundError(f"No benchmark_results_*.csv files found in {results_dir}")
+    return candidates[0]
 
 
-# ===========================================================================
-# SECTION C — Memory footprint
-# ===========================================================================
-print()
-print("=" * 70)
-print("## C. Memory footprint")
-print("=" * 70)
+def normalize(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "wall_time_s" not in out.columns:
+        out["wall_time_s"] = out["runtime"]
+    if "peak_rss_mb" not in out.columns:
+        out["peak_rss_mb"] = out["peak_memory_mb"]
+    if "k_max" not in out.columns:
+        out["k_max"] = out["n_clusters"]
+    if "cpu_time_s" not in out.columns:
+        out["cpu_time_s"] = np.nan
+    if "effective_cores" not in out.columns:
+        out["effective_cores"] = np.nan
+    out["k_sweep_sum_k"] = out["k_max"] * (out["k_max"] + 1) / 2
+    out["nominal_work_units"] = out["n_samples"] * out["n_features"] * out["k_sweep_sum_k"]
+    out["rss_mb_per_1k_samples"] = out["peak_rss_mb"] / (out["n_samples"] / 1000.0)
+    out["wall_seconds_per_1k_samples"] = out["wall_time_s"] / (out["n_samples"] / 1000.0)
+    return out
 
-df25["mb_per_1k"] = df25["peak_memory_mb"] / (df25["n_samples"] / 1000.0)
 
-mem_mean_25 = {impl: df25.loc[df25["implementation"] == impl, "mb_per_1k"].mean()
-               for impl in IMPL_ORDER_25}
-mem_abs_25  = {impl: df25.loc[df25["implementation"] == impl, "peak_memory_mb"].mean()
-               for impl in IMPL_ORDER_25}
+def paired_runtime_pivot(df: pd.DataFrame) -> pd.DataFrame:
+    key_columns = [
+        "dataset_id",
+        "repeat_index",
+        "n_samples",
+        "n_features",
+        "k_max",
+        "init",
+        "sklearn_n_init",
+        "cluster_std",
+        "cluster_separation",
+    ]
+    available_keys = [col for col in key_columns if col in df.columns]
+    return (
+        df.pivot_table(index=available_keys, columns="implementation", values="wall_time_s", aggfunc="median")
+        .dropna(subset=["python"])
+        .sort_index()
+    )
 
-for impl in IMPL_ORDER_25:
-    print(f"- Mean peak_memory_mb, {impl}: **{fmt(mem_abs_25[impl])} MB** absolute")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r}', 'peak_memory_mb.mean()')}")
-    print(f"- Mean MB per 1k samples, {impl}: **{fmt(mem_mean_25[impl])} MB/1k**")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r}', '(peak_memory_mb / (n_samples/1000)).mean()')}")
+
+def loglog_slope(df: pd.DataFrame, impl: str) -> tuple[float, float]:
+    trend = (
+        df[df["implementation"] == impl]
+        .groupby("n_samples")["wall_time_s"]
+        .median()
+        .reset_index()
+        .sort_values("n_samples")
+    )
+    if len(trend) < 2:
+        return float("nan"), float("nan")
+    x = np.log2(trend["n_samples"].to_numpy(dtype=float))
+    y = np.log2(trend["wall_time_s"].to_numpy(dtype=float))
+    slope, intercept = np.polyfit(x, y, 1)
+    fitted = slope * x + intercept
+    ss_res = float(np.sum((y - fitted) ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot else float("nan")
+    return float(slope), float(r2)
+
+
+def completeness_table(df: pd.DataFrame) -> pd.DataFrame:
+    return (
+        df.groupby(["implementation", "n_samples"], observed=True)
+        .size()
+        .unstack("n_samples")
+        .reindex(index=IMPL_ORDER)
+        .sort_index(axis=1)
+    )
+
+
+def print_runtime_section(df: pd.DataFrame) -> None:
+    print("## Runtime and paired speedups")
+    print()
+    print("| Implementation | Median wall time | IQR wall time | Median CPU time | Median effective cores |")
+    print("|---|---:|---:|---:|---:|")
+    for impl in IMPL_ORDER:
+        sub = df[df["implementation"] == impl]
+        iqr = sub["wall_time_s"].quantile(0.75) - sub["wall_time_s"].quantile(0.25)
+        print(
+            f"| {DISPLAY_NAMES[impl]} | {fmt(sub['wall_time_s'].median(), 3)} s | "
+            f"{fmt(iqr, 3)} s | {fmt(sub['cpu_time_s'].median(), 3)} s | "
+            f"{fmt(sub['effective_cores'].median(), 2)} |"
+        )
     print()
 
-# Deltas
-sk_rust_ratio = mem_abs_25["sklearn"] / mem_abs_25["rust"]
-py_rust_ratio = mem_abs_25["python"]  / mem_abs_25["rust"]
-print(f"- sklearn uses **{fmt(sk_rust_ratio, 2)}×** more memory than Rust (absolute mean)")
-print(f"  {src(CSV_2025.name, 'all', 'mean(sklearn peak_memory_mb) / mean(rust peak_memory_mb)')}")
-print(f"- Python uses **{fmt(py_rust_ratio, 2)}×** more memory than Rust (absolute mean)")
-print(f"  {src(CSV_2025.name, 'all', 'mean(python peak_memory_mb) / mean(rust peak_memory_mb)')}")
-
-# 2026 CSV memory
-df26["mb_per_1k"] = df26["peak_memory_mb"] / (df26["n_samples"] / 1000.0)
-mem_mean_26 = {impl: df26.loc[df26["implementation"] == impl, "mb_per_1k"].mean()
-               for impl in IMPL_ORDER_26}
-mem_abs_26  = {impl: df26.loc[df26["implementation"] == impl, "peak_memory_mb"].mean()
-               for impl in IMPL_ORDER_26}
-print()
-print("  --- 2026 CSV memory (all 4 impls, smaller grid) ---")
-for impl in IMPL_ORDER_26:
-    print(f"- Mean peak_memory_mb, {impl} (2026): **{fmt(mem_abs_26[impl])} MB**")
-    print(f"  {src(CSV_2026.name, f'implementation=={impl!r}', 'peak_memory_mb.mean()')}")
-    print(f"- Mean MB per 1k samples, {impl} (2026): **{fmt(mem_mean_26[impl])} MB/1k**")
+    pivot = paired_runtime_pivot(df)
+    print("| Comparison | Median paired speedup vs Python | Mean paired speedup vs Python |")
+    print("|---|---:|---:|")
+    for impl in ["rust", "rust_parallel", "sklearn"]:
+        paired = (pivot["python"] / pivot[impl]).replace([np.inf, -np.inf], np.nan).dropna()
+        print(f"| {DISPLAY_NAMES[impl]} | {fmt(paired.median(), 2)}x | {fmt(paired.mean(), 2)}x |")
     print()
 
 
-# ===========================================================================
-# SECTION D — Cluster quality: internal metrics
-# ===========================================================================
-print()
-print("=" * 70)
-print("## D. Cluster quality — internal (silhouette, Davies-Bouldin)")
-print("=" * 70)
-
-print("\n### From 2025 CSV (n=336 per impl)")
-for impl in IMPL_ORDER_25:
-    sub = df25[df25["implementation"] == impl]
-    sil = sub["silhouette_score"].mean()
-    db  = sub["davies_bouldin_index"].mean()
-    ch  = sub["calinski_harabasz_index"].mean()
-    print(f"- {impl}: silhouette={fmt(sil)}, Davies-Bouldin={fmt(db)}, Calinski-Harabasz={fmt(ch, 1)}")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r}', 'mean of each metric')}")
-
-print("\n### From 2026 CSV (n=12 per impl)")
-for impl in IMPL_ORDER_26:
-    sub = df26[df26["implementation"] == impl]
-    sil = sub["silhouette_score"].mean()
-    db  = sub["davies_bouldin_index"].mean()
-    print(f"- {impl}: silhouette={fmt(sil)}, Davies-Bouldin={fmt(db)}")
-    print(f"  {src(CSV_2026.name, f'implementation=={impl!r}', 'mean of each metric')}")
-
-# Python silhouette delta vs sklearn
-py_sil_25  = df25.loc[df25["implementation"] == "python",  "silhouette_score"].mean()
-sk_sil_25  = df25.loc[df25["implementation"] == "sklearn", "silhouette_score"].mean()
-ru_sil_25  = df25.loc[df25["implementation"] == "rust",    "silhouette_score"].mean()
-print()
-print(f"- Silhouette delta (sklearn − python): **{fmt(sk_sil_25 - py_sil_25, 3)}** points (2025 CSV)")
-print(f"- Silhouette delta (sklearn − rust):   **{fmt(sk_sil_25 - ru_sil_25, 3)}** points (2025 CSV)")
+def print_scaling_section(df: pd.DataFrame) -> None:
+    print("## Scale factors")
+    print()
+    sample_sizes = sorted(df["n_samples"].unique())
+    smallest = int(sample_sizes[0])
+    largest = int(sample_sizes[-1])
+    print(f"The sample axis is a log2 doubling sequence from {smallest:,} to {largest:,} rows.")
+    print()
+    print("| Implementation | Median runtime at smallest n | Median runtime at largest n | Large/small runtime factor | Log-log slope vs n | R2 |")
+    print("|---|---:|---:|---:|---:|---:|")
+    for impl in IMPL_ORDER:
+        sub = df[df["implementation"] == impl]
+        small_rt = sub.loc[sub["n_samples"] == smallest, "wall_time_s"].median()
+        large_rt = sub.loc[sub["n_samples"] == largest, "wall_time_s"].median()
+        slope, r2 = loglog_slope(df, impl)
+        print(
+            f"| {DISPLAY_NAMES[impl]} | {fmt(small_rt, 3)} s | {fmt(large_rt, 3)} s | "
+            f"{fmt(large_rt / small_rt, 1)}x | {fmt(slope, 3)} | {fmt(r2, 3)} |"
+        )
+    print()
 
 
-# ===========================================================================
-# SECTION E — Cluster quality: external (ARI / NMI) — 2026 CSV only
-# ===========================================================================
-print()
-print("=" * 70)
-print("## E. Cluster quality — external (ARI / NMI) — 2026 CSV only")
-print("=" * 70)
+def print_memory_section(df: pd.DataFrame) -> None:
+    print("## Memory and resource footprint")
+    print()
+    print("| Implementation | Median sampled RSS | Median RSS / 1k samples | Median wall sec / 1k samples |")
+    print("|---|---:|---:|---:|")
+    for impl in IMPL_ORDER:
+        sub = df[df["implementation"] == impl]
+        print(
+            f"| {DISPLAY_NAMES[impl]} | {fmt(sub['peak_rss_mb'].median(), 1)} MB | "
+            f"{fmt(sub['rss_mb_per_1k_samples'].median(), 2)} MB | "
+            f"{fmt(sub['wall_seconds_per_1k_samples'].median(), 4)} s |"
+        )
+    print()
 
-for impl in IMPL_ORDER_26:
-    sub = df26[df26["implementation"] == impl]
-    ari = sub["adjusted_rand_index"].mean()
-    nmi = sub["normalized_mutual_info"].mean()
-    perfect = (sub["adjusted_rand_index"] >= 0.999).sum()
-    total   = len(sub)
-    print(f"- {impl}: mean ARI={fmt(ari, 4)}, mean NMI={fmt(nmi, 4)}, "
-          f"ARI≈1.0 in {perfect}/{total} runs")
-    print(f"  {src(CSV_2026.name, f'implementation=={impl!r}', 'mean(ARI), mean(NMI), count(ARI>=0.999)')}")
-
-# Which impls always hit ARI=1.0
-perfect_impls = [impl for impl in IMPL_ORDER_26
-                 if (df26.loc[df26["implementation"] == impl, "adjusted_rand_index"] >= 0.999).all()]
-print()
-print(f"- Impls with ARI≈1.0 in ALL runs: {perfect_impls}")
-print(f"  {src(CSV_2026.name, 'all', 'adjusted_rand_index >= 0.999 for every row per impl')}")
-
-# Min ARI per impl
-print()
-for impl in IMPL_ORDER_26:
-    min_ari = df26.loc[df26["implementation"] == impl, "adjusted_rand_index"].min()
-    print(f"- {impl} min ARI: **{fmt(min_ari, 4)}**")
-    print(f"  {src(CSV_2026.name, f'implementation=={impl!r}', 'adjusted_rand_index.min()')}")
-
-
-# ===========================================================================
-# SECTION F — Two-implementation deltas worth quoting
-# ===========================================================================
-print()
-print("=" * 70)
-print("## F. Notable two-implementation deltas")
-print("=" * 70)
-
-# 1. Memory: sklearn vs Rust
-print(f"1. sklearn uses **{fmt(sk_rust_ratio, 2)}×** more peak memory than Rust (mean absolute, 2025 CSV)")
-
-# 2. Silhouette: sklearn vs python gap
-print(f"2. sklearn silhouette is **{fmt(sk_sil_25 - py_sil_25, 3)}** points higher than Python (2025 CSV)")
-
-# 3. Rust speedup over Python at the largest dataset
-sub_py_large = df25[(df25["implementation"] == "python") & (df25["n_samples"] == 128000)]["runtime"].mean()
-sub_ru_large = df25[(df25["implementation"] == "rust")   & (df25["n_samples"] == 128000)]["runtime"].mean()
-print(f"3. At n=128,000 samples, Rust is **{fmt(sub_py_large / sub_ru_large, 2)}×** faster than Python")
-print(f"   {src(CSV_2025.name, 'n_samples==128000', 'mean(python) / mean(rust)')}")
-
-# 4. rust_parallel vs rust at largest grid point in 2026 CSV
-largest_26 = df26["n_samples"].max()
-rp_large26 = df26[(df26["implementation"] == "rust_parallel") & (df26["n_samples"] == largest_26)]["runtime"].mean()
-ru_large26 = df26[(df26["implementation"] == "rust")          & (df26["n_samples"] == largest_26)]["runtime"].mean()
-print(f"4. At n={largest_26:,} (2026 CSV), rust_parallel is **{fmt(ru_large26 / rp_large26, 2)}×** faster than rust")
-print(f"   {src(CSV_2026.name, f'n_samples=={largest_26}', 'mean(rust) / mean(rust_parallel)')}")
-
-# 5. DB index: custom impls vs sklearn
-py_db_25 = df25.loc[df25["implementation"] == "python",  "davies_bouldin_index"].mean()
-sk_db_25 = df25.loc[df25["implementation"] == "sklearn", "davies_bouldin_index"].mean()
-ru_db_25 = df25.loc[df25["implementation"] == "rust",    "davies_bouldin_index"].mean()
-print(f"5. sklearn Davies-Bouldin: {fmt(sk_db_25)} vs Python: {fmt(py_db_25)}, Rust: {fmt(ru_db_25)} (lower=better, 2025 CSV)")
-
-# 6. Median runtime ratio (more robust for heavy-tail distribution)
-med_py = medians_25["python"]
-med_ru = medians_25["rust"]
-print(f"6. Median Rust/Python speed-up: **{fmt(med_py / med_ru, 3)}×** (vs {fmt(py_m / ru_m, 3)}× on means; 2025 CSV)")
+    largest_work = df["nominal_work_units"].max()
+    largest = (
+        df[df["nominal_work_units"] == largest_work]
+        .groupby("implementation", observed=True)
+        .agg(
+            median_wall=("wall_time_s", "median"),
+            median_rss=("peak_rss_mb", "median"),
+            median_cpu=("cpu_time_s", "median"),
+            median_cores=("effective_cores", "median"),
+        )
+        .reindex(IMPL_ORDER)
+    )
+    print(f"Largest matched workload: nominal work {int(largest_work):,}.")
+    print()
+    print("| Implementation | Median wall time | Median sampled RSS | Median CPU time | Median effective cores |")
+    print("|---|---:|---:|---:|---:|")
+    for impl, row in largest.iterrows():
+        print(
+            f"| {DISPLAY_NAMES[impl]} | {fmt(row['median_wall'], 2)} s | "
+            f"{fmt(row['median_rss'], 0)} MB | {fmt(row['median_cpu'], 2)} s | "
+            f"{fmt(row['median_cores'], 2)} |"
+        )
+    print()
 
 
-# ===========================================================================
-# SECTION G — Sample sizes and dimensionalities
-# ===========================================================================
-print()
-print("=" * 70)
-print("## G. Sample sizes and dimensionalities tested")
-print("=" * 70)
+def print_quality_section(df: pd.DataFrame) -> None:
+    print("## Clustering quality")
+    print()
+    print("| Implementation | Median ARI | Mean ARI | Min ARI | Mean NMI | ARI >= 0.999 runs |")
+    print("|---|---:|---:|---:|---:|---:|")
+    for impl in IMPL_ORDER:
+        sub = df[df["implementation"] == impl]
+        perfect = int((sub["adjusted_rand_index"] >= 0.999).sum())
+        print(
+            f"| {DISPLAY_NAMES[impl]} | {fmt(sub['adjusted_rand_index'].median(), 3)} | "
+            f"{fmt(sub['adjusted_rand_index'].mean(), 3)} | "
+            f"{fmt(sub['adjusted_rand_index'].min(), 3)} | "
+            f"{fmt(sub['normalized_mutual_info'].mean(), 3)} | {perfect}/{len(sub)} |"
+        )
+    print()
 
-n_samples_25  = sorted(df25["n_samples"].unique())
-n_features_25 = sorted(df25["n_features"].unique())
-n_clusters_25 = sorted(df25["n_clusters"].unique())
-n_samples_26  = sorted(df26["n_samples"].unique())
-n_features_26 = sorted(df26["n_features"].unique())
-n_clusters_26 = sorted(df26["n_clusters"].unique())
-
-n_samples_25_i  = [int(x) for x in n_samples_25]
-n_features_25_i = [int(x) for x in n_features_25]
-n_clusters_25_i = [int(x) for x in n_clusters_25]
-n_samples_26_i  = [int(x) for x in n_samples_26]
-n_features_26_i = [int(x) for x in n_features_26]
-n_clusters_26_i = [int(x) for x in n_clusters_26]
-
-print(f"### 2025 CSV (1008 rows)")
-print(f"- n_samples:  {n_samples_25_i}  ({len(n_samples_25_i)} levels)")
-print(f"- n_features: {n_features_25_i}  ({len(n_features_25_i)} levels)")
-print(f"- n_clusters: {n_clusters_25_i}  ({len(n_clusters_25_i)} levels)")
-print(f"- implementations: {IMPL_ORDER_25}  (3 × 8 × 7 × 6 = 1008 rows)")
-
-print(f"\n### 2026 CSV (48 rows)")
-print(f"- n_samples:  {n_samples_26_i}  ({len(n_samples_26_i)} levels)")
-print(f"- n_features: {n_features_26_i}  ({len(n_features_26_i)} levels)")
-print(f"- n_clusters: {n_clusters_26_i}  ({len(n_clusters_26_i)} levels)")
-print(f"- implementations: {IMPL_ORDER_26}  (4 × 4 × 3 × 1 = 48 rows)")
+    print("| Implementation | Mean silhouette | Mean Davies-Bouldin | Mean Calinski-Harabasz |")
+    print("|---|---:|---:|---:|")
+    for impl in IMPL_ORDER:
+        sub = df[df["implementation"] == impl]
+        print(
+            f"| {DISPLAY_NAMES[impl]} | {fmt(sub['silhouette_score'].mean(), 3)} | "
+            f"{fmt(sub['davies_bouldin_index'].mean(), 3)} | "
+            f"{fmt(sub['calinski_harabasz_index'].mean(), 1)} |"
+        )
+    print()
 
 
-# ===========================================================================
-# SECTION H — Additional stats for richness
-# ===========================================================================
-print()
-print("=" * 70)
-print("## H. Additional stats")
-print("=" * 70)
+def print_completeness_section(df: pd.DataFrame, csv_path: Path) -> None:
+    sample_sizes = sorted(int(v) for v in df["n_samples"].unique())
+    feature_counts = sorted(int(v) for v in df["n_features"].unique())
+    k_values = sorted(int(v) for v in df["k_max"].unique())
+    repeats = sorted(int(v) for v in df["repeat_index"].unique()) if "repeat_index" in df.columns else []
 
-# Max runtime in 2025
-max_row = df25.loc[df25["runtime"].idxmax()]
-print(f"- Slowest single run (2025): {fmt(max_row['runtime'])} s, "
-      f"impl={max_row['implementation']}, n={max_row['n_samples']}, "
-      f"f={max_row['n_features']}, k={max_row['n_clusters']}")
-print(f"  {src(CSV_2025.name, 'all rows', 'runtime.idxmax()')}")
-
-# Min memory per impl
-for impl in IMPL_ORDER_25:
-    min_mem = df25.loc[df25["implementation"] == impl, "peak_memory_mb"].min()
-    max_mem = df25.loc[df25["implementation"] == impl, "peak_memory_mb"].max()
-    print(f"- {impl} memory range (2025): {fmt(min_mem)} – {fmt(max_mem)} MB")
-    print(f"  {src(CSV_2025.name, f'implementation=={impl!r}', 'peak_memory_mb.min() / .max()')}")
-
-
-# ===========================================================================
-# SECTION I — Caveats summary
-# ===========================================================================
-print()
-print("=" * 70)
-print("## I. Caveats")
-print("=" * 70)
-
-# Count n_init values if present — not in 2025 CSV columns
-# Check via stdout if available
-print("- n_init is NOT a column in either CSV; cannot confirm n_init=10 for sklearn from data alone.")
-print("  Runner script defaults should be verified against src/sklearn_impl/.")
-print("- Custom Python/Rust impls use a single random seed per run (no multi-init averaging),")
-print("  which inflates variance and can depress silhouette vs sklearn.")
-print("- ARI/NMI are only available in the 2026 CSV (48 rows, narrow grid: n≤8k, f≤8, k=8 only).")
-print("  Generalisability to other cluster counts is unknown.")
-print("- The 2025 CSV runtime distribution is heavy-tailed (max/mean ratio ≫ 1 for python/sklearn),")
-print("  so mean speedup ratios are sensitive to a handful of large-n, high-k, high-f runs.")
-print("- peak_memory_mb is process-level RSS delta; it does not isolate algorithm overhead from")
-print("  interpreter/runtime base footprint, which is ~20–50 MB for Python and ~5 MB for Rust.")
-print("- rust_parallel exists only in the 2026 CSV (n≤8k), so parallel scaling to n=128k")
-print("  is extrapolated, not measured.")
-print("- Calinski-Harabasz index is not reported in analysis_facts.md because it is scale-dependent")
-print("  and less interpretable without normalisation across configurations.")
+    print("# K-Means analysis facts inventory")
+    print()
+    print(f"Source CSV: `results/{csv_path.name}`")
+    print()
+    print("All numbers below are generated by `src/analysis_audit.py` from the current benchmark CSV.")
+    print("No historical benchmark snapshots are mixed into this report.")
+    print()
+    print("## Benchmark grid")
+    print()
+    print(f"- Rows: {len(df):,}")
+    print(f"- Implementations: {', '.join(DISPLAY_NAMES[impl] for impl in IMPL_ORDER)}")
+    print(f"- Sample sizes: {fmt_ints(sample_sizes)}")
+    print(f"- Feature counts: {fmt_ints(feature_counts)}")
+    print(f"- k_max values: {fmt_ints(k_values)}")
+    if repeats:
+        print(f"- Paired repeats: {fmt_ints(repeats)}")
+    print(f"- Initialization policy: {df['init'].mode().iat[0]}, sklearn n_init={int(df['sklearn_n_init'].mode().iat[0])}")
+    print()
+    print("Rows per implementation and sample size:")
+    print()
+    print("| Implementation | " + " | ".join(f"{n:,}" for n in sample_sizes) + " |")
+    print("|---|" + "|".join("---:" for _ in sample_sizes) + "|")
+    counts = completeness_table(df)
+    for impl in IMPL_ORDER:
+        values = [int(counts.loc[impl, n]) for n in sample_sizes]
+        print(f"| {DISPLAY_NAMES[impl]} | " + " | ".join(str(v) for v in values) + " |")
+    print()
+    failed = int((df["exit_code"] != 0).sum()) if "exit_code" in df.columns else 0
+    missing_quality = int(df[["adjusted_rand_index", "normalized_mutual_info"]].isna().any(axis=1).sum())
+    print(f"Exit-code failures: {failed}. Rows missing ARI/NMI: {missing_quality}.")
+    print()
 
 
-# ===========================================================================
-# SANITY CHECK — row counts
-# ===========================================================================
-print()
-print("=" * 70)
-print("## Sanity checks")
-print("=" * 70)
-for impl in IMPL_ORDER_25:
-    n = (df25["implementation"] == impl).sum()
-    print(f"2025 rows for {impl}: {n}")
-for impl in IMPL_ORDER_26:
-    n = (df26["implementation"] == impl).sum()
-    print(f"2026 rows for {impl}: {n}")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate current benchmark facts inventory.")
+    parser.add_argument("--input", type=Path, default=None, help="Benchmark CSV to audit; defaults to the current suite CSV.")
+    args = parser.parse_args()
 
-print("\nDone.")
+    csv_path = args.input or DEFAULT_CSV
+    if not csv_path.exists():
+        csv_path = latest_csv(RESULTS_DIR)
+    df = normalize(pd.read_csv(csv_path))
+
+    print_completeness_section(df, csv_path)
+    print_runtime_section(df)
+    print_scaling_section(df)
+    print_memory_section(df)
+    print_quality_section(df)
+
+    print("## Caveats")
+    print()
+    print("- Runtime is end-to-end CLI subprocess wall time, including process launch, CSV read, the full k sweep, and output CSV writing.")
+    print("- Memory is sampled process RSS polled during each subprocess; it is not a platform max-RSS measurement.")
+    print("- The suite uses single-start k-means++ across all implementations, including scikit-learn `n_init=1`.")
+    print("- ARI/NMI compare against generated ground-truth labels. Internal metrics are sampled at 10k rows for the largest workloads.")
+    print("- The Rust and Rust-Parallel paths share the same clustering math; their quality rows should match for paired workloads.")
+
+
+if __name__ == "__main__":
+    main()

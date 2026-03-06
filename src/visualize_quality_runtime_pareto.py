@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""
-Quality–runtime Pareto scatter: ARI vs mean runtime, sized by peak memory.
+"""Quality-runtime frontier from the newest benchmark CSV.
 
-Uses benchmark_results_20260518_003517.csv (the only CSV with ARI columns).
-One marker per (implementation × n_samples) cell.  Implementation centroids
-are annotated with the display name.
+Uses the newest benchmark_results_*.csv with ARI/NMI columns.
+One marker per matched workload median. Memory is intentionally not encoded
+as bubble area; it has a separate chart so small-memory implementations remain
+legible.
 """
 
 from __future__ import annotations
@@ -12,48 +12,57 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
+try:
+    from viz_style import color, display_name, mpl_marker, ordered_implementations
+except ImportError:
+    from src.viz_style import color, display_name, mpl_marker, ordered_implementations
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CSV_2026 = REPO_ROOT / "results" / "benchmark_results_20260518_003517.csv"
 OUT_PATH = REPO_ROOT / "results" / "quality_runtime_pareto.png"
 
-PALETTE: dict[str, str] = {
-    "python": "#3776AB",
-    "rust": "#CE422B",
-    "rust_parallel": "#A0522D",
-    "sklearn": "#F7931E",
-}
-LABELS: dict[str, str] = {
-    "python": "Python",
-    "rust": "Rust (serial)",
-    "rust_parallel": "Rust (Parallel)",
-    "sklearn": "scikit-learn",
-}
-
-# Marker scale: size = k * mean_memory_mb.  Tuned so the largest bubble
-# (sklearn ~190 MB) lands around 300 pt² and the smallest (rust ~0.03 MB)
-# is still visible at ≥ 10 pt².
-_MEM_SCALE = 1.5
-_MIN_SIZE = 10.0
+def latest_csv_with_columns(results_dir: Path, required_columns: set[str]) -> Path:
+    """Return newest benchmark CSV containing every required column."""
+    candidates = sorted(
+        results_dir.glob("benchmark_results_*.csv"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate in candidates:
+        columns = set(pd.read_csv(candidate, nrows=0).columns)
+        if required_columns.issubset(columns):
+            return candidate
+    raise FileNotFoundError(
+        f"No benchmark_results_*.csv in {results_dir} contains {sorted(required_columns)}"
+    )
 
 
-def bubble_size(mem_mb: float) -> float:
-    return max(_MIN_SIZE, mem_mb * _MEM_SCALE)
+def add_workload_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "wall_time_s" not in out.columns:
+        out["wall_time_s"] = out["runtime"]
+    if "k_max" not in out.columns:
+        out["k_max"] = out["n_clusters"]
+    out["k_sweep_sum_k"] = out["k_max"] * (out["k_max"] + 1) / 2
+    out["nominal_work_units"] = out["n_samples"] * out["n_features"] * out["k_sweep_sum_k"]
+    return out
 
 
 def main() -> None:
-    df = pd.read_csv(CSV_2026)
+    csv_path = latest_csv_with_columns(
+        REPO_ROOT / "results",
+        {"adjusted_rand_index", "normalized_mutual_info"},
+    )
+    df = add_workload_columns(pd.read_csv(csv_path))
     n_runs = len(df)
 
-    # Per-(implementation, n_samples) aggregates.
+    # Per matched workload aggregates.
     agg = (
-        df.groupby(["implementation", "n_samples"])
+        df.groupby(["implementation", "nominal_work_units", "n_samples", "n_features", "n_clusters"])
         .agg(
-            mean_runtime=("runtime", "mean"),
-            mean_ari=("adjusted_rand_index", "mean"),
-            mean_mem=("peak_memory_mb", "mean"),
+            median_runtime=("wall_time_s", "median"),
+            median_ari=("adjusted_rand_index", "median"),
         )
         .reset_index()
     )
@@ -61,60 +70,73 @@ def main() -> None:
     # Per-implementation centroid for annotation labels.
     centroid = (
         agg.groupby("implementation")
-        .agg(cx=("mean_runtime", "mean"), cy=("mean_ari", "mean"))
+        .agg(cx=("median_runtime", "median"), cy=("median_ari", "median"))
         .reset_index()
     )
 
-    fig, ax = plt.subplots(figsize=(9, 6))
+    fig, ax = plt.subplots(figsize=(10, 6.4))
 
-    for impl, grp in agg.groupby("implementation"):
-        color = PALETTE.get(str(impl), "#999999")
-        sizes = grp["mean_mem"].apply(bubble_size)
+    for impl in ordered_implementations(agg["implementation"].unique()):
+        grp = agg[agg["implementation"] == impl]
+        impl_color = color(str(impl))
         ax.scatter(
-            grp["mean_runtime"],
-            grp["mean_ari"],
-            s=sizes,
-            color=color,
+            grp["median_runtime"],
+            grp["median_ari"],
+            s=46,
+            marker=mpl_marker(str(impl)),
+            color=impl_color,
             alpha=0.75,
             edgecolors="white",
             linewidths=0.6,
-            label=LABELS.get(str(impl), str(impl)),
+            label=display_name(str(impl)),
             zorder=3,
         )
 
-    # Annotate centroids — offset upward to avoid marker overlap.
+    annotation_offsets = {
+        "python": (10, 0, "left", "center"),
+        "rust": (-12, -12, "right", "top"),
+        "rust_parallel": (12, -12, "left", "top"),
+        "sklearn": (-10, -14, "right", "top"),
+    }
     for _, row in centroid.iterrows():
         impl = str(row["implementation"])
-        color = PALETTE.get(impl, "#999999")
-        label = LABELS.get(impl, impl)
+        impl_color = color(impl)
+        label = display_name(impl)
+        dx, dy, ha, va = annotation_offsets.get(impl, (0, 10, "center", "bottom"))
         ax.annotate(
             label,
             xy=(row["cx"], row["cy"]),
-            xytext=(0, 10),
+            xytext=(dx, dy),
             textcoords="offset points",
-            ha="center",
+            ha=ha,
+            va=va,
             fontsize=8,
             fontweight="bold",
-            color=color,
-            arrowprops=dict(arrowstyle="-", color=color, lw=0.8, alpha=0.5),
+            color=impl_color,
+            arrowprops=dict(arrowstyle="-", color=impl_color, lw=0.8, alpha=0.5),
         )
 
-    ax.set_xscale("log")
-    ax.set_xlabel("Mean runtime  (s, lower is better)", fontsize=11)
-    ax.set_ylabel("Mean Adjusted Rand Index  (higher is better)", fontsize=11)
-    ax.set_title("Quality–runtime Pareto (ARI vs runtime)", fontsize=13, fontweight="bold")
+    ax.set_xscale("log", base=2)
+    ax.set_xlabel("Median runtime  (s, log2 scale, lower is better)", fontsize=11)
+    ax.set_ylabel("Median Adjusted Rand Index  (higher is better)", fontsize=11)
 
-    subtitle = f"{CSV_2026.name}  ·  {n_runs} runs  ·  marker area ∝ peak memory"
-    ax.text(
-        0.5, 1.01,
+    subtitle = f"{csv_path.name}  ·  {n_runs} rows  ·  medians by matched workload"
+    fig.suptitle(
+        "Quality–runtime Pareto (ARI vs runtime)",
+        x=0.5,
+        y=0.965,
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5, 0.915,
         subtitle,
-        transform=ax.transAxes,
-        ha="center", va="bottom",
+        ha="center",
+        va="bottom",
         fontsize=8, color="#666666",
     )
 
     # Legend for implementations (de-duplicated by matplotlib).
-    # Add a separate size-legend for memory scale.
     handles, labels_leg = ax.get_legend_handles_labels()
     # Deduplicate while preserving order.
     seen: dict[str, int] = {}
@@ -132,26 +154,14 @@ def main() -> None:
         fontsize=8,
         title_fontsize=8,
         loc="lower right",
+        bbox_to_anchor=(0.985, 0.145),
+        bbox_transform=fig.transFigure,
+        frameon=True,
     )
     ax.add_artist(legend_impl)
 
-    # Bubble-size guide — three representative memory values.
-    guide_mems = [10.0, 50.0, 150.0]
-    guide_handles = [
-        plt.scatter([], [], s=bubble_size(m), color="#888888", alpha=0.6, label=f"{m:.0f} MB")
-        for m in guide_mems
-    ]
-    ax.legend(
-        guide_handles,
-        [f"{m:.0f} MB" for m in guide_mems],
-        title="Peak memory",
-        fontsize=8,
-        title_fontsize=8,
-        loc="upper right",
-    )
-
     ax.grid(True, ls=":", alpha=0.4)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 0.82, 0.88))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")

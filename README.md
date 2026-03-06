@@ -1,11 +1,11 @@
 # pythonvsrust-kmeans
 
-A comparative study of K-Means clustering implementations written in pure Python, Rust and scikit-learn.  
+A comparative study of K-Means clustering implementations written in pure Python, serial Rust, Rayon-parallel Rust, and scikit-learn.
 The repository is structured so that you can generate synthetic data, run each implementation under identical scenarios, capture execution metrics and visualise the results.
 
 > **🌐 Live site:** A companion [GitHub Pages site](https://nilesh-patil.github.io/pythonvsrust-kmeans/) renders all results as interactive Plotly dashboards and includes a [live, in-browser WebAssembly demo](https://nilesh-patil.github.io/pythonvsrust-kmeans/demo/) of the Rust K-Means with step-by-step Lloyd's-iteration animation, six point distributions (blobs, rings, moons, anisotropic, uniform, spiral), and a WASM-vs-pure-JS speed race.
 
-![Python vs Scikit Learn ( Python ) vs Rust](./results/analysis.png "Title")
+![Fresh comparative benchmark: runtime, throughput, sampled memory, and quality](./results/benchmark_plots_20260609_112255.png)
 
 ### Lloyd's iterations, animated
 
@@ -22,6 +22,8 @@ Random init converges slowly when two centroids start in the same blob (third pa
 ### Parallel Rust K-Means (Rayon)
 
 ![parallel scaling](./results/parallel_scaling.png)
+
+The Rust-only parallel sweep follows the same log2 sample progression as the main suite, from 1k through 256k rows at 32 features and `k_max=32`. The current data peaks at 1.32x over serial Rust on the 256k-row slice; the full sweep is saved as `results/parallel_scaling_n*.csv`, with `results/parallel_scaling.csv` kept as the 32k compatibility slice.
 
 ---
 
@@ -82,7 +84,7 @@ This project uses [Pixi](https://pixi.sh/) for dependency management, which prov
 
 2. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/pythonvsrust-kmeans.git
+   git clone https://github.com/nilesh-patil/pythonvsrust-kmeans.git
    cd pythonvsrust-kmeans
    ```
 
@@ -106,13 +108,12 @@ This project uses [Pixi](https://pixi.sh/) for dependency management, which prov
 3. **View results**:
    Results are saved in the `results/` directory as CSV files and visualization plots.
 
-> **Four rows per experiment.** Each benchmark experiment now produces **four result rows** in the CSV:
-> `python`, `sklearn`, `rust` (serial), and `rust_parallel` (Rayon, all cores).
-> The serial and parallel Rust rows reuse the same generated dataset file, so only one
-> dataset-generation pass is needed per experiment configuration.
-> The dashboard (`src/build_dashboard.py`) maps `rust_parallel` to the display name
-> "Rust - Parallel" and colours it sienna (`#A0522D`) to distinguish it from the
-> orange-red of the serial Rust row.
+> **Four rows per matched workload.** Each benchmark cell produces result rows for
+> `python`, `sklearn`, `rust` (serial), and `rust_parallel` (Rayon). The runner can
+> repeat each cell with paired dataset/algorithm seeds, records wall time, CPU time,
+> effective cores, sampled RSS, normalized throughput, ARI/NMI, and paired speedups,
+> then feeds those metrics into the dashboard and static figures. Implementation
+> colors and symbols are centralized in `src/viz_style.py`.
 
 ### Using Pixi Tasks (Recommended)
 
@@ -171,37 +172,37 @@ pixi run help               # List available pixi tasks
 
 ## 🎯 Project goal
 
-K-Means is one of the most widely-used clustering algorithms but its performance profile can vary dramatically depending on implementation language, data layout and compilation strategy.  The aim of this project is therefore **to quantify how a hand-rolled Python implementation, a high-performance Rust implementation and the industrial-strength scikit-learn implementation behave under a matrix of realistic workloads**.
+K-Means is one of the most widely-used clustering algorithms but its performance profile can vary dramatically depending on implementation language, data layout and compilation strategy.  The aim of this project is therefore **to quantify how hand-rolled Python, serial Rust, Rayon-parallel Rust, and industrial-strength scikit-learn implementations behave under a matrix of realistic workloads**.
 
 The comparison focuses on three axes:
 
-1. **Runtime** – wall-clock time spent in the `fit` phase.
-2. **Memory usage** – peak resident set size (RSS) while clustering.
-3. **Result quality** – inertia / within-cluster sum-of-squares to ensure all variants reach comparable minima.
+1. **Runtime** - end-to-end CLI subprocess wall time, including CSV loading, fitting every `k` from 1 to `k_max`, output CSV writing and process overhead.
+2. **Memory usage** - sampled process resident set size (RSS) while the CLI runs, polled every 10 ms. This is not a platform max-RSS measurement.
+3. **Result quality** - inertia, internal clustering metrics, and ground-truth ARI/NMI when generated labels are available.
 
-By systematically sweeping through different dataset sizes (\(10^3\) – \(10^6\) samples), dimensionalities (2 – 128 features) and cluster counts (2 – 64), I hope to surface the trade-offs that practitioners can expect in production.
+The current website refresh uses a paired log2 sample sequence from 1k through 256k rows. Every sample size covers feature counts 2, 8, and 32 with k_max values 8 and 32 over three paired repeats.
 
 ---
 
 ## 🛠️ Implementation strategy
 
 1. **Synthetic data generation**  
-   A single source of truth (`src/generate_data.py`) produces repeatable Gaussian blobs so that each implementation receives identical input.  Datasets are cached under `data/` using a hashed filename that encodes `n_samples`, `n_features` and `n_clusters`.
+   A single source of truth (`src/generate_data.py`) produces repeatable Gaussian blobs so that each implementation receives identical input. Datasets are cached under `data/` using a hashed filename that encodes sample count, feature count, cluster count, seed, cluster standard deviation, cluster separation, and a short hash.
 
 2. **Algorithm implementations**
    * **Pure Python (`src/python_impl/kmeans.py`)** – A straightforward NumPy-based reference that mirrors the textbook algorithm with no low-level optimisations. Serves as the baseline. Can be run as a CLI tool.
-   * **Rust (`src/rust_impl`)** – Simplified implementation in `rust` and compiled to a CLI tool that accepts the dataset path, output path to save and max n-clusters to run clustering. The binary is called from Python via `subprocess` so that timing/memory are captured from the shell. Build with `cargo build --release` in the `src/rust_impl/target/release` directory.
+   * **Rust (`src/rust_impl`)** – Serial and Rayon-parallel CLI paths that accept the dataset path, output path, and max cluster count. The binary is called from Python via `subprocess` so that timing/memory are captured from the shell. Build with `cargo build --release` in the `src/rust_impl` directory.
    * **scikit-learn (`src/sklearn_impl/kmeans.py`)** – A thin wrapper that delegates to `sklearn.cluster.KMeans`, providing a mature C-accelerated yardstick. Also executable as a CLI tool.
 
 3. **Benchmark harness (`runner.py`)**
    * Parses experiment parameters (either CLI flags or pre-defined defaults).
    * Ensures the necessary datasets exist, generating them on the fly if required.
-   * Executes each implementation in isolation while recording runtime with Python's `time.perf_counter` and memory with `psutil.Process.memory_info`.
-   * Emits a `.csv` per scenario into `results/` containing metrics for each language variant.
-   * Rusn a basic comparative analysis using these metrics and visualizes them.
+   * Executes each implementation in isolation while recording subprocess runtime with Python's `time.perf_counter` and sampled RSS with `psutil.Process.memory_info`.
+   * Emits one suite-level `benchmark_results_<timestamp>.csv` into `results/`, with one row per implementation/workload/repeat plus paired resource and quality metrics.
+   * Writes per-implementation output CSVs while each subprocess runs, then uses the suite-level metrics file for the dashboard and static visualizations.
 
 4. **Analysis notebooks** [to-do] 
-   The `notebooks/` directory contains exploratory notebooks that pivot/plot the raw results – e.g. runtime vs. sample count log-log plots, memory heatmaps, silhouette scores, etc.
+   The `notebooks/` directory can be used for exploratory pivots of the raw results, including nominal-workload runtime curves, log2 resource scaling, throughput comparisons, sampled-RSS views, and quality/runtime frontiers.
 
 ---
 

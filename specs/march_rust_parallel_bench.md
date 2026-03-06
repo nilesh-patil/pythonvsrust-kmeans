@@ -37,7 +37,7 @@ rust_parallel) instead of three.
 
 | Key | Value |
 |-----|-------|
-| `IMPL_COLORS["rust_parallel"]` | `"#A0522D"` (sienna — a darker rust shade) |
+| `IMPL_COLORS["rust_parallel"]` | `"#CC79A7"` via the shared `src/viz_style.py` palette |
 | display name | `"Rust - Parallel"` (via the `DISPLAY_NAMES` map) |
 
 ## Acceptance Criteria

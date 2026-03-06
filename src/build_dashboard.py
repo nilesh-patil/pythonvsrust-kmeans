@@ -17,87 +17,271 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
+from plotly.offline import get_plotlyjs
 
-# ── colour palette ────────────────────────────────────────────────────────────
-IMPL_COLORS: dict[str, str] = {
-    "python": "#3776AB",
-    "rust": "#CE422B",
-    "sklearn": "#F7931E",
-    "rust_parallel": "#A0522D",  # sienna — darker rust shade for parallel variant
-}
-
-# ── human-readable display names ──────────────────────────────────────────────
-DISPLAY_NAMES: dict[str, str] = {
-    "python": "Python",
-    "rust": "Rust",
-    "sklearn": "scikit-learn",
-    "rust_parallel": "Rust - Parallel",
-}
+try:
+    from viz_style import (
+        DISPLAY_NAMES,
+        IMPL_COLORS,
+        color,
+        display_name,
+        implementation_from_display,
+        log2_tick_text,
+        log2_tick_values,
+        ordered_implementations,
+        plotly_pattern,
+        plotly_symbol,
+    )
+except ImportError:
+    from src.viz_style import (
+        DISPLAY_NAMES,
+        IMPL_COLORS,
+        color,
+        display_name,
+        implementation_from_display,
+        log2_tick_text,
+        log2_tick_values,
+        ordered_implementations,
+        plotly_pattern,
+        plotly_symbol,
+    )
 
 
 def _color(impl: str) -> str:
-    return IMPL_COLORS.get(impl.lower(), "#888888")
+    return color(impl)
 
 
 def _display_name(impl: str) -> str:
-    return DISPLAY_NAMES.get(impl.lower(), impl)
+    return display_name(impl)
+
+
+def _implementation_from_display(display: str) -> str:
+    return implementation_from_display(display)
+
+
+def _with_analysis_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a benchmark frame with derived workload/resource columns."""
+    out = df.copy()
+    if "wall_time_s" not in out.columns and "runtime" in out.columns:
+        out["wall_time_s"] = out["runtime"]
+    if "peak_rss_mb" not in out.columns and "peak_memory_mb" in out.columns:
+        out["peak_rss_mb"] = out["peak_memory_mb"]
+    if "k_max" not in out.columns:
+        out["k_max"] = out["n_clusters"]
+    if "cpu_time_s" not in out.columns:
+        out["cpu_time_s"] = np.nan
+    if "effective_cores" not in out.columns:
+        out["effective_cores"] = np.nan
+
+    k_max = out["k_max"].clip(lower=1)
+    wall = out["wall_time_s"].replace(0, np.nan)
+    cpu = out["cpu_time_s"].replace(0, np.nan)
+    out["input_values"] = out["n_samples"] * out["n_features"]
+    out["k_sweep_sum_k"] = k_max * (k_max + 1) / 2
+    out["nominal_work_units"] = out["input_values"] * out["k_sweep_sum_k"]
+    out["samples_per_second"] = out["n_samples"] / wall
+    out["work_units_per_second"] = out["nominal_work_units"] / wall
+    out["rss_mb_per_1k_samples"] = out["peak_rss_mb"] * 1000 / out["n_samples"]
+    out["cpu_seconds_per_1k_samples"] = cpu * 1000 / out["n_samples"]
+    return out
+
+
+def _median_by_workload(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    keys = ["implementation", "nominal_work_units", "n_samples", "n_features", "n_clusters"]
+    optional = [key for key in ("k_max", "init", "sklearn_n_init") if key in df.columns]
+    return (
+        df.groupby(keys + optional, dropna=False)[metric]
+        .median()
+        .reset_index()
+        .sort_values(["implementation", "nominal_work_units"])
+    )
+
+
+def _trend_by_workload(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    """Median trend by nominal workload, collapsing duplicate workload shapes."""
+    return (
+        df.groupby(["implementation", "nominal_work_units"], dropna=False)
+        .agg(
+            value=(metric, "median"),
+            workload_shapes=("nominal_work_units", "size"),
+        )
+        .reset_index()
+        .sort_values(["implementation", "nominal_work_units"])
+    )
+
+
+def _apply_tufte_plotly_style(fig: go.Figure) -> go.Figure:
+    """Quiet Plotly defaults so data marks carry the visual weight."""
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=dict(family="Inter, system-ui, sans-serif", color="#222222"),
+        hoverlabel=dict(bgcolor="white", bordercolor="#cccccc", font_size=12),
+        legend=dict(bgcolor="rgba(255,255,255,0)", borderwidth=0),
+        margin=dict(l=72, r=36, t=72, b=64),
+    )
+    axis_style = dict(
+        showline=True,
+        linecolor="#999999",
+        linewidth=1,
+        mirror=False,
+        showgrid=True,
+        gridcolor="#eeeeee",
+        gridwidth=1,
+        zeroline=False,
+        ticks="outside",
+        tickcolor="#bbbbbb",
+        ticklen=4,
+    )
+    fig.update_xaxes(**axis_style)
+    fig.update_yaxes(**axis_style)
+    return fig
 
 
 # ── chart builders ────────────────────────────────────────────────────────────
 
 def _runtime_chart(df: pd.DataFrame) -> go.Figure:
-    """Tab 1 — log-log scatter: runtime vs n_samples by implementation."""
+    """Tab 1 — CLI runtime vs nominal k-sweep workload."""
+    df = _with_analysis_columns(df)
+    agg = _median_by_workload(df, "wall_time_s")
+    trend = _trend_by_workload(agg, "wall_time_s")
     fig = go.Figure()
-    for impl, grp in df.groupby("implementation"):
-        grp = grp.sort_values("n_samples")
+    for impl in ordered_implementations(trend["implementation"].unique()):
+        grp = trend[trend["implementation"] == impl]
         display = _display_name(impl)
         fig.add_trace(
             go.Scatter(
-                x=grp["n_samples"],
-                y=grp["runtime"],
-                mode="markers+lines",
+                x=grp["nominal_work_units"],
+                y=grp["value"],
+                mode="lines+markers",
                 name=display,
-                marker=dict(color=_color(impl), size=8),
-                line=dict(color=_color(impl)),
-                customdata=grp[["n_features", "n_clusters", "runtime"]].values,
+                line=dict(color=_color(impl), width=2),
+                marker=dict(color=_color(impl), symbol=plotly_symbol(impl), size=9),
+                customdata=grp[["workload_shapes"]].values,
                 hovertemplate=(
                     f"<b>{display}</b><br>"
-                    "n_samples=%{x}<br>"
-                    "n_features=%{customdata[0]}<br>"
-                    "n_clusters=%{customdata[1]}<br>"
-                    "runtime=%{customdata[2]:.4f}s<extra></extra>"
+                    "work=%{x:.3g}<br>"
+                    "median runtime=%{y:.4f}s<br>"
+                    "matched workload shapes=%{customdata[0]}<extra></extra>"
                 ),
             )
         )
+    runtime_ticks = log2_tick_values(trend["value"])
+    work_ticks = log2_tick_values(trend["nominal_work_units"])
     fig.update_layout(
-        title="Runtime vs Scale",
-        xaxis=dict(title="n_samples", type="log"),
-        yaxis=dict(title="Runtime (s)", type="log"),
+        title="CLI k-sweep runtime vs nominal workload",
+        xaxis=dict(
+            title="n_samples x n_features x sum(k=1..k_max) (log2 ticks)",
+            type="log",
+            tickvals=work_ticks,
+            ticktext=log2_tick_text(work_ticks),
+        ),
+        yaxis=dict(
+            title="Runtime (s, log2 scale, including CSV read/write)",
+            type="log",
+            tickvals=runtime_ticks,
+            ticktext=log2_tick_text(runtime_ticks),
+        ),
         legend_title="Implementation",
     )
+    _apply_tufte_plotly_style(fig)
+    return fig
+
+
+def _throughput_chart(df: pd.DataFrame) -> go.Figure:
+    """Tab 2 — nominal work throughput vs workload."""
+    df = _with_analysis_columns(df)
+    agg = _median_by_workload(df, "work_units_per_second")
+    trend = _trend_by_workload(agg, "work_units_per_second")
+    fig = go.Figure()
+    for impl in ordered_implementations(trend["implementation"].unique()):
+        grp = trend[trend["implementation"] == impl]
+        display = _display_name(impl)
+        fig.add_trace(
+            go.Scatter(
+                x=grp["nominal_work_units"],
+                y=grp["value"],
+                mode="lines+markers",
+                name=display,
+                line=dict(color=_color(impl), width=2),
+                marker=dict(color=_color(impl), symbol=plotly_symbol(impl), size=9),
+                customdata=grp[["workload_shapes"]].values,
+                hovertemplate=(
+                    f"<b>{display}</b><br>"
+                    "work=%{x:.3g}<br>"
+                    "throughput=%{y:.3g} work units/s<br>"
+                    "matched workload shapes=%{customdata[0]}<extra></extra>"
+                ),
+            )
+        )
+    throughput_ticks = log2_tick_values(trend["value"])
+    work_ticks = log2_tick_values(trend["nominal_work_units"])
+    fig.update_layout(
+        title="Nominal k-sweep throughput",
+        xaxis=dict(
+            title="n_samples x n_features x sum(k=1..k_max) (log2 ticks)",
+            type="log",
+            tickvals=work_ticks,
+            ticktext=log2_tick_text(work_ticks),
+        ),
+        yaxis=dict(
+            title="Nominal work units / s (log2 scale)",
+            type="log",
+            tickvals=throughput_ticks,
+            ticktext=log2_tick_text(throughput_ticks),
+        ),
+        legend_title="Implementation",
+    )
+    _apply_tufte_plotly_style(fig)
     return fig
 
 
 def _memory_chart(df: pd.DataFrame) -> go.Figure:
-    """Tab 2 — bar chart: MB per 1k samples by implementation."""
-    df = df.copy()
-    df["mb_per_1k"] = df["peak_memory_mb"] / (df["n_samples"] / 1_000)
-    agg = df.groupby("implementation")["mb_per_1k"].mean().reset_index()
-
-    agg["display"] = agg["implementation"].map(_display_name)
-    fig = go.Figure(
-        go.Bar(
-            x=agg["display"],
-            y=agg["mb_per_1k"],
-            marker_color=[_color(i) for i in agg["implementation"]],
-            hovertemplate="%{x}: %{y:.2f} MB/1k samples<extra></extra>",
+    """Tab 3 — sampled RSS vs nominal k-sweep workload."""
+    df = _with_analysis_columns(df)
+    agg = _median_by_workload(df, "peak_rss_mb")
+    trend = _trend_by_workload(agg, "peak_rss_mb")
+    fig = go.Figure()
+    for impl in ordered_implementations(trend["implementation"].unique()):
+        grp = trend[trend["implementation"] == impl]
+        display = _display_name(impl)
+        fig.add_trace(
+            go.Scatter(
+                x=grp["nominal_work_units"],
+                y=grp["value"],
+                mode="lines+markers",
+                name=display,
+                line=dict(color=_color(impl), width=2),
+                marker=dict(color=_color(impl), symbol=plotly_symbol(impl), size=9),
+                customdata=grp[["workload_shapes"]].values,
+                hovertemplate=(
+                    f"<b>{display}</b><br>"
+                    "work=%{x:.3g}<br>"
+                    "median sampled RSS=%{y:.2f} MB<br>"
+                    "matched workload shapes=%{customdata[0]}<extra></extra>"
+                ),
+            )
         )
-    )
+    memory_ticks = log2_tick_values(trend["value"])
+    work_ticks = log2_tick_values(trend["nominal_work_units"])
     fig.update_layout(
-        title="Memory Footprint (mean MB per 1k samples)",
-        xaxis_title="Implementation",
-        yaxis_title="MB / 1k samples",
+        title="Memory footprint vs nominal workload",
+        xaxis=dict(
+            title="n_samples x n_features x sum(k=1..k_max) (log2 ticks)",
+            type="log",
+            tickvals=work_ticks,
+            ticktext=log2_tick_text(work_ticks),
+        ),
+        yaxis=dict(
+            title="Sampled RSS MB (log2 scale)",
+            type="log",
+            tickvals=memory_ticks,
+            ticktext=log2_tick_text(memory_ticks),
+        ),
+        legend_title="Implementation",
     )
+    _apply_tufte_plotly_style(fig)
     return fig
 
 
@@ -115,7 +299,7 @@ def _internal_quality_chart(df: pd.DataFrame) -> go.Figure:
                 name=f"{display} — silhouette",
                 x=["Silhouette (↑)"],
                 y=[row["silhouette_score"]],
-                marker_color=_color(impl),
+                marker=dict(color=_color(impl), pattern=dict(shape=plotly_pattern(impl))),
                 legendgroup=display,
                 hovertemplate=f"{display} silhouette=%{{y:.4f}}<extra></extra>",
             )
@@ -125,7 +309,7 @@ def _internal_quality_chart(df: pd.DataFrame) -> go.Figure:
                 name=f"{display} — Davies-Bouldin",
                 x=["Davies-Bouldin (↓)"],
                 y=[row["davies_bouldin_index"]],
-                marker_color=_color(impl),
+                marker=dict(color=_color(impl), pattern=dict(shape=plotly_pattern(impl))),
                 legendgroup=display,
                 showlegend=False,
                 hovertemplate=f"{display} Davies-Bouldin=%{{y:.4f}}<extra></extra>",
@@ -137,6 +321,7 @@ def _internal_quality_chart(df: pd.DataFrame) -> go.Figure:
         yaxis_title="Score",
         legend_title="Implementation",
     )
+    _apply_tufte_plotly_style(fig)
     return fig
 
 
@@ -159,7 +344,7 @@ def _external_quality_chart(df: pd.DataFrame) -> go.Figure | None:
                 name=f"{display} — ARI",
                 x=["ARI (↑)"],
                 y=[row["adjusted_rand_index"]],
-                marker_color=_color(str(impl)),
+                marker=dict(color=_color(str(impl)), pattern=dict(shape=plotly_pattern(str(impl)))),
                 legendgroup=display,
                 hovertemplate=f"{display} ARI=%{{y:.4f}}<extra></extra>",
             )
@@ -169,7 +354,7 @@ def _external_quality_chart(df: pd.DataFrame) -> go.Figure | None:
                 name=f"{display} — NMI",
                 x=["NMI (↑)"],
                 y=[row["normalized_mutual_info"]],
-                marker_color=_color(str(impl)),
+                marker=dict(color=_color(str(impl)), pattern=dict(shape=plotly_pattern(str(impl)))),
                 legendgroup=display,
                 showlegend=False,
                 hovertemplate=f"{display} NMI=%{{y:.4f}}<extra></extra>",
@@ -181,13 +366,148 @@ def _external_quality_chart(df: pd.DataFrame) -> go.Figure | None:
         yaxis=dict(title="Score", range=[0, 1.05]),
         legend_title="Implementation",
     )
+    _apply_tufte_plotly_style(fig)
     return fig
+
+
+def _quality_frontier_chart(df: pd.DataFrame) -> go.Figure | None:
+    """Quality/runtime frontier: external ARI if available, otherwise silhouette."""
+    df = _with_analysis_columns(df)
+    metric = None
+    metric_label = None
+    y_range = None
+    if "adjusted_rand_index" in df.columns and df["adjusted_rand_index"].notna().any():
+        metric = "adjusted_rand_index"
+        metric_label = "Adjusted Rand Index (higher is better)"
+        y_range = [0, 1.05]
+    elif "silhouette_score" in df.columns and df["silhouette_score"].notna().any():
+        metric = "silhouette_score"
+        metric_label = "Silhouette score (higher is better)"
+        y_range = [0, 1.05]
+    else:
+        return None
+
+    keys = ["implementation", "n_samples", "n_features", "n_clusters", "nominal_work_units"]
+    agg = (
+        df.groupby(keys, dropna=False)[["wall_time_s", metric]]
+        .median()
+        .reset_index()
+        .sort_values(["implementation", "nominal_work_units"])
+    )
+
+    fig = go.Figure()
+    for impl in ordered_implementations(agg["implementation"].unique()):
+        grp = agg[agg["implementation"] == impl]
+        display = _display_name(impl)
+        fig.add_trace(
+            go.Scatter(
+                x=grp["wall_time_s"],
+                y=grp[metric],
+                mode="markers",
+                name=display,
+                marker=dict(color=_color(impl), symbol=plotly_symbol(impl), size=10),
+                customdata=grp[["n_samples", "n_features", "n_clusters"]].values,
+                hovertemplate=(
+                    f"<b>{display}</b><br>"
+                    "runtime=%{x:.4f}s<br>"
+                    f"{metric_label}=%{{y:.4f}}<br>"
+                    "n_samples=%{customdata[0]}<br>"
+                    "n_features=%{customdata[1]}<br>"
+                    "k_max=%{customdata[2]}<extra></extra>"
+                ),
+            )
+        )
+    runtime_ticks = log2_tick_values(agg["wall_time_s"])
+    fig.update_layout(
+        title="Quality vs runtime frontier",
+        xaxis=dict(
+            title="Median runtime (s, log2 scale)",
+            type="log",
+            tickvals=runtime_ticks,
+            ticktext=log2_tick_text(runtime_ticks),
+        ),
+        yaxis=dict(title=metric_label, range=y_range),
+        legend_title="Implementation",
+    )
+    _apply_tufte_plotly_style(fig)
+    return fig
+
+
+def _resource_table(df: pd.DataFrame) -> str:
+    """Compact Tufte-style resource table with medians and IQRs."""
+    df = _with_analysis_columns(df)
+    agg = (
+        df.groupby("implementation", dropna=False)
+        .agg(
+            median_runtime_s=("wall_time_s", "median"),
+            p25_runtime_s=("wall_time_s", lambda s: s.quantile(0.25)),
+            p75_runtime_s=("wall_time_s", lambda s: s.quantile(0.75)),
+            median_rss_mb=("peak_rss_mb", "median"),
+            median_rss_per_1k=("rss_mb_per_1k_samples", "median"),
+            median_cpu_s_per_1k=("cpu_seconds_per_1k_samples", "median"),
+            median_effective_cores=("effective_cores", "median"),
+            median_throughput=("work_units_per_second", "median"),
+        )
+        .reset_index()
+        .sort_values("median_runtime_s")
+    )
+    if "adjusted_rand_index" in df.columns:
+        quality = df.groupby("implementation")["adjusted_rand_index"].median()
+        agg["median_ari"] = agg["implementation"].map(quality)
+
+    def fmt(value: float, precision: int = 3) -> str:
+        if pd.isna(value):
+            return "n/a"
+        if abs(value) >= 1000:
+            return f"{value:,.0f}"
+        return f"{value:.{precision}f}"
+
+    rows = []
+    for _, row in agg.iterrows():
+        impl = str(row["implementation"])
+        iqr = row["p75_runtime_s"] - row["p25_runtime_s"]
+        rows.append(
+            "<tr>"
+            f"<th><span style=\"color:{_color(impl)}\">{_display_name(impl)}</span></th>"
+            f"<td>{fmt(row['median_runtime_s'])}</td>"
+            f"<td>{fmt(iqr)}</td>"
+            f"<td>{fmt(row['median_rss_mb'], 2)}</td>"
+            f"<td>{fmt(row['median_rss_per_1k'], 2)}</td>"
+            f"<td>{fmt(row['median_cpu_s_per_1k'])}</td>"
+            f"<td>{fmt(row['median_effective_cores'], 2)}</td>"
+            f"<td>{fmt(row['median_throughput'])}</td>"
+            f"<td>{fmt(row.get('median_ari', np.nan), 3)}</td>"
+            "</tr>"
+        )
+
+    return dedent(f"""
+        <div class="resource-table-wrap">
+          <table class="resource-table">
+            <thead>
+              <tr>
+                <th>Implementation</th>
+                <th>Runtime median s</th>
+                <th>Runtime IQR s</th>
+                <th>RSS median MB</th>
+                <th>RSS MB / 1k</th>
+                <th>CPU s / 1k</th>
+                <th>Effective cores</th>
+                <th>Work units / s</th>
+                <th>ARI median</th>
+              </tr>
+            </thead>
+            <tbody>
+              {''.join(rows)}
+            </tbody>
+          </table>
+        </div>
+    """).strip()
 
 
 # ── HTML assembly ─────────────────────────────────────────────────────────────
 
 def _fig_div(fig: go.Figure) -> str:
-    return pio.to_html(fig, include_plotlyjs="cdn", full_html=False)
+    return pio.to_html(fig, include_plotlyjs=False, full_html=False)
 
 
 def _build_html(
@@ -195,21 +515,23 @@ def _build_html(
     source_csv_name: str,
 ) -> str:
     runtime_div = _fig_div(_runtime_chart(df))
+    throughput_div = _fig_div(_throughput_chart(df))
     memory_div = _fig_div(_memory_chart(df))
-    internal_div = _fig_div(_internal_quality_chart(df))
-    external_fig = _external_quality_chart(df)
+    resource_table = _resource_table(df)
+    quality_fig = _quality_frontier_chart(df)
 
-    if external_fig is not None:
-        external_content = _fig_div(external_fig)
+    if quality_fig is not None:
+        quality_content = _fig_div(quality_fig)
     else:
-        external_content = dedent("""
+        quality_content = dedent("""
             <p style="padding:1rem;color:#555;font-style:italic;">
-              Run with ground-truth labels (Feature 4) to populate external metrics.
+              Run with ground-truth labels to populate quality metrics.
               Re-generate datasets via <code>src/generate_data.py</code> and
-              re-run the benchmark to produce <em>adjusted_rand_index</em> and
-              <em>normalized_mutual_info</em> columns.
+              re-run the benchmark to produce ARI/NMI columns.
             </p>
         """).strip()
+
+    plotly_js = get_plotlyjs()
 
     # Radio-button CSS tabs — no JS framework required
     html = dedent(f"""\
@@ -219,6 +541,7 @@ def _build_html(
           <meta charset="utf-8"/>
           <meta name="viewport" content="width=device-width,initial-scale=1"/>
           <title>K-Means Benchmark Dashboard</title>
+          <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"/>
           <style>
             body {{font-family:system-ui,sans-serif;margin:0;padding:0 1rem 2rem;background:#fafafa;color:#222;}}
             h1 {{font-size:1.6rem;margin-bottom:.25rem;}}
@@ -237,20 +560,32 @@ def _build_html(
             #tab1:checked ~ .tab-labels label[for=tab1],
             #tab2:checked ~ .tab-labels label[for=tab2],
             #tab3:checked ~ .tab-labels label[for=tab3],
-            #tab4:checked ~ .tab-labels label[for=tab4]
+            #tab4:checked ~ .tab-labels label[for=tab4],
+            #tab5:checked ~ .tab-labels label[for=tab5]
             {{background:#fff;border-bottom:2px solid #fff;margin-bottom:-2px;font-weight:600;}}
             #tab1:checked ~ .tab-contents #content1,
             #tab2:checked ~ .tab-contents #content2,
             #tab3:checked ~ .tab-contents #content3,
-            #tab4:checked ~ .tab-contents #content4 {{display:block;}}
+            #tab4:checked ~ .tab-contents #content4,
+            #tab5:checked ~ .tab-contents #content5 {{display:block;}}
+            .resource-table-wrap {{overflow-x:auto;margin:1rem 0;}}
+            .resource-table {{border-collapse:collapse;min-width:860px;background:#fff;}}
+            .resource-table th,.resource-table td {{
+              border-bottom:1px solid #e5e5e5;padding:.45rem .6rem;text-align:right;
+              font-variant-numeric:tabular-nums;
+            }}
+            .resource-table th:first-child,.resource-table td:first-child {{text-align:left;}}
+            .resource-table thead th {{color:#555;font-weight:600;border-bottom:1px solid #bbb;}}
             footer {{margin-top:3rem;font-size:.8rem;color:#888;border-top:1px solid #ddd;padding-top:.75rem;}}
           </style>
+          <script>{plotly_js}</script>
         </head>
         <body>
           <h1>K-Means Benchmark Dashboard</h1>
           <p class="subtitle">
-            Interactive comparison of Python, Rust, and sklearn K-Means implementations
-            across runtime, memory, and clustering quality dimensions.
+            Interactive comparison of Python, Rust, Rust-Parallel, and scikit-learn K-Means execution paths
+            across CLI k-sweep runtime, throughput, sampled RSS, CPU/resource use, and clustering quality.
+            Runtime is measured end-to-end, including CSV read/write and fitting k = 1..k_max.
           </p>
 
           <div class="tabs">
@@ -258,17 +593,20 @@ def _build_html(
             <input type="radio" id="tab2" name="tabs"/>
             <input type="radio" id="tab3" name="tabs"/>
             <input type="radio" id="tab4" name="tabs"/>
+            <input type="radio" id="tab5" name="tabs"/>
             <div class="tab-labels">
-              <label for="tab1">Runtime vs scale</label>
-              <label for="tab2">Memory footprint</label>
-              <label for="tab3">Quality (internal)</label>
-              <label for="tab4">Quality (external)</label>
+              <label for="tab1">Runtime vs workload</label>
+              <label for="tab2">Throughput</label>
+              <label for="tab3">Memory footprint</label>
+              <label for="tab4">Resource table</label>
+              <label for="tab5">Quality frontier</label>
             </div>
             <div class="tab-contents">
               <div class="tab-content" id="content1">{runtime_div}</div>
-              <div class="tab-content" id="content2">{memory_div}</div>
-              <div class="tab-content" id="content3">{internal_div}</div>
-              <div class="tab-content" id="content4">{external_content}</div>
+              <div class="tab-content" id="content2">{throughput_div}</div>
+              <div class="tab-content" id="content3">{memory_div}</div>
+              <div class="tab-content" id="content4">{resource_table}</div>
+              <div class="tab-content" id="content5">{quality_content}</div>
             </div>
           </div>
 

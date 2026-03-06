@@ -9,7 +9,7 @@ title: Live demo
 # Lloyd's, in your browser.
 
 <p style="font-size: 1.1rem; color: var(--charcoal); max-width: 60ch;">
-Watch K-Means converge step by step — the Rust implementation runs entirely in your browser via WebAssembly. No data leaves your machine; the only network call is the one that loads the ~24&nbsp;KB <code>.wasm</code> file.
+Watch K-Means converge step by step — the Rust implementation runs entirely in your browser via WebAssembly. No data leaves your machine; the only network call is the one that loads the 26.5&nbsp;KB <code>.wasm</code> file.
 </p>
 
 <p>Choose a distribution, tune the controls, and hit <strong>Run K-Means</strong> to see each iteration animate live alongside a real-time inertia chart. A pure-JS K-Means runs in parallel so you can see the WASM speedup directly.</p>

@@ -121,12 +121,101 @@ def test_runner_handles_missing_labels(tmp_path):
     assert np.isnan(nmi), f"Expected NaN for NMI when labels absent, got {nmi}"
 
 
+def test_runner_samples_internal_quality_metrics_for_large_n(tmp_path, monkeypatch):
+    """Large-N runs should sample expensive internal metrics and keep full ARI/NMI."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    import runner as runner_module
+    from runner import BenchmarkRunner
+
+    monkeypatch.setattr(runner_module, "QUALITY_EXACT_SAMPLE_LIMIT", 20)
+    monkeypatch.setattr(runner_module, "QUALITY_SAMPLE_SIZE", 30)
+
+    n = 90
+    n_clusters = 3
+    true_labels = np.tile(np.arange(n_clusters), n // n_clusters)
+    features = true_labels[:, None] * 8.0 + np.arange(n)[:, None] * 0.001
+    df_data = pd.DataFrame(features, columns=["feature_1"])
+    df_data.insert(0, "ID", range(1, n + 1))
+
+    csv_path = tmp_path / "large.csv"
+    df_data.to_csv(csv_path, index=False)
+    np.save(tmp_path / "large_labels.npy", true_labels.astype(np.int32))
+
+    df_results = pd.DataFrame({"cluster_3": true_labels})
+    metrics = BenchmarkRunner().calculate_clustering_metrics(
+        str(csv_path),
+        df_results,
+        n_clusters,
+    )
+
+    assert metrics["quality_sampled"] is True
+    assert metrics["quality_sample_size"] == 30
+    assert metrics["silhouette_score"] > 0
+    assert metrics["adjusted_rand_index"] == pytest.approx(1.0)
+    assert metrics["normalized_mutual_info"] == pytest.approx(1.0)
+
+
+def test_runner_adds_resource_and_paired_speedup_metrics():
+    """The saved benchmark CSV must include normalized resource and paired speedup columns."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from runner import BenchmarkRunner
+
+    rows = []
+    for impl, wall_time, cpu_time, rss in [
+        ("python", 2.0, 1.8, 80.0),
+        ("rust", 0.5, 0.4, 4.0),
+        ("rust_parallel", 0.4, 1.2, 6.0),
+    ]:
+        rows.append(
+            {
+                "run_id": "fixture",
+                "repeat_index": 1,
+                "dataset_seed": 7,
+                "random_state": 7,
+                "implementation": impl,
+                "n_samples": 1000,
+                "n_features": 8,
+                "n_clusters": 4,
+                "k_max": 4,
+                "init": "k-means++",
+                "cluster_std": 0.5,
+                "cluster_separation": 3.0,
+                "wall_time_s": wall_time,
+                "runtime": wall_time,
+                "cpu_time_s": cpu_time,
+                "peak_rss_mb": rss,
+                "peak_memory_mb": rss,
+                "requested_threads": 4 if impl == "rust_parallel" else 1,
+            }
+        )
+
+    enriched = BenchmarkRunner().add_derived_metrics(pd.DataFrame(rows))
+
+    required = {
+        "nominal_work_units",
+        "samples_per_second",
+        "work_units_per_second",
+        "rss_mb_per_1k_samples",
+        "cpu_seconds_per_1k_samples",
+        "speedup_vs_python",
+        "speedup_vs_rust_serial",
+    }
+    assert required.issubset(enriched.columns)
+
+    rust = enriched[enriched["implementation"] == "rust"].iloc[0]
+    rust_parallel = enriched[enriched["implementation"] == "rust_parallel"].iloc[0]
+
+    assert rust["nominal_work_units"] == 1000 * 8 * (1 + 2 + 3 + 4)
+    assert rust["speedup_vs_python"] == pytest.approx(4.0)
+    assert rust_parallel["speedup_vs_rust_serial"] == pytest.approx(1.25)
+
+
 # ---------------------------------------------------------------------------
 # Test 4 — dashboard HTML contains all four required tab labels
 # ---------------------------------------------------------------------------
 
 def test_dashboard_builds_html_with_all_tabs(tmp_path):
-    """build_dashboard.py produces HTML containing all four exact tab label strings."""
+    """build_dashboard.py produces HTML containing the redesigned tab labels."""
     # Minimal fixture CSV that matches the real schema
     rows = []
     for impl in ("python", "rust"):
@@ -168,10 +257,15 @@ def test_dashboard_builds_html_with_all_tabs(tmp_path):
 
     html = out_html.read_text(encoding="utf-8")
     required_tabs = [
-        "Runtime vs scale",
+        "Runtime vs workload",
+        "Throughput",
         "Memory footprint",
-        "Quality (internal)",
-        "Quality (external)",
+        "Resource table",
+        "Quality frontier",
     ]
     for tab in required_tabs:
         assert tab in html, f"Tab label '{tab}' not found in dashboard HTML"
+
+    assert "CLI k-sweep runtime" in html
+    assert "sampled RSS, CPU/resource use" in html
+    assert "including CSV read/write" in html

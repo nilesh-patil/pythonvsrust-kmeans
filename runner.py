@@ -11,14 +11,27 @@ import time
 import subprocess
 import json
 import hashlib
+import resource
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 import psutil
 from pathlib import Path
 
+from src.viz_style import (
+    IMPL_HATCHES_MPL,
+    color,
+    display_name,
+    mpl_marker,
+    ordered_implementations,
+)
+
 pd.options.mode.copy_on_write = True
+
+QUALITY_EXACT_SAMPLE_LIMIT = 32_000
+QUALITY_SAMPLE_SIZE = 10_000
+
 
 class BenchmarkRunner:
     """Main benchmark orchestrator for K-Means experiments"""
@@ -36,7 +49,15 @@ class BenchmarkRunner:
         self.results_dir.mkdir(exist_ok=True)
         self.data_dir.mkdir(exist_ok=True)
         
-    def get_dataset_filename(self, n_samples: int, n_features: int, n_clusters: int) -> str:
+    def get_dataset_filename(
+        self,
+        n_samples: int,
+        n_features: int,
+        n_clusters: int,
+        random_state: int = 42,
+        cluster_std: float = 0.5,
+        cluster_separation: float = 3.0,
+    ) -> str:
         """
         Generate a unique filename for a dataset based on its parameters
         
@@ -49,12 +70,16 @@ class BenchmarkRunner:
             Unique filename for the dataset
         """
         # Create a hash of the parameters for unique identification
-        params_str = f"n{n_samples}_f{n_features}_c{n_clusters}"
+        params_str = (
+            f"n{n_samples}_f{n_features}_c{n_clusters}"
+            f"_seed{random_state}_std{cluster_std:g}_sep{cluster_separation:g}"
+        )
         hash_str = hashlib.md5(params_str.encode()).hexdigest()[:8]
         return f"dataset_{params_str}_{hash_str}.csv"
     
     def generate_dataset(self, n_samples: int, n_features: int, n_clusters: int, 
-                        random_state: int = 42) -> str:
+                        random_state: int = 42, cluster_std: float = 0.5,
+                        cluster_separation: float = 3.0) -> str:
         """
         Generate synthetic dataset using generate_data.py
         
@@ -67,7 +92,14 @@ class BenchmarkRunner:
         Returns:
             Path to generated dataset
         """
-        filename = self.get_dataset_filename(n_samples, n_features, n_clusters)
+        filename = self.get_dataset_filename(
+            n_samples,
+            n_features,
+            n_clusters,
+            random_state=random_state,
+            cluster_std=cluster_std,
+            cluster_separation=cluster_separation,
+        )
         filepath = self.data_dir / filename
         
         # Check if dataset already exists
@@ -84,7 +116,9 @@ class BenchmarkRunner:
             "--n_features", str(n_features),
             "--n_clusters", str(n_clusters),
             "--output", str(filepath),
-            "--random_state", str(random_state)
+            "--random_state", str(random_state),
+            "--cluster_std", str(cluster_std),
+            "--cluster_separation", str(cluster_separation),
         ]
         
         try:
@@ -107,26 +141,62 @@ class BenchmarkRunner:
         Returns:
             Dictionary with metrics (runtime, peak_memory, exit_code)
         """
-        # Start process
+        usage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
         start_time = time.perf_counter()
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         # Monitor memory usage and CPU
+        peak_rss = 0
+        baseline_rss = None
+        peak_uss = 0
+        cpu_percentages = []
+        thread_counts = []
+        io_read_bytes = 0
+        io_write_bytes = 0
+        voluntary_ctx_switches = 0
+        involuntary_ctx_switches = 0
+        rss_samples = 0
         try:
             ps_process = psutil.Process(process.pid)
-            peak_memory = 0
-            cpu_percentages = []
+            ps_process.cpu_percent(interval=None)
             
             # Poll memory and CPU usage while process is running
             while process.poll() is None:
                 try:
                     memory_info = ps_process.memory_info()
-                    peak_memory = max(peak_memory, memory_info.rss)
+                    if baseline_rss is None:
+                        baseline_rss = memory_info.rss
+                    peak_rss = max(peak_rss, memory_info.rss)
+                    rss_samples += 1
+
+                    try:
+                        full_memory_info = ps_process.memory_full_info()
+                        peak_uss = max(peak_uss, getattr(full_memory_info, "uss", 0))
+                    except (psutil.AccessDenied, AttributeError):
+                        pass
                     
-                    # Get CPU usage (returns percentage since last call)
-                    cpu_percent = ps_process.cpu_percent(interval=0.01)
+                    cpu_percent = ps_process.cpu_percent(interval=None)
                     if cpu_percent > 0:  # Ignore initial 0 values
                         cpu_percentages.append(cpu_percent)
+
+                    try:
+                        thread_counts.append(ps_process.num_threads())
+                    except psutil.Error:
+                        pass
+
+                    try:
+                        io_counters = ps_process.io_counters()
+                        io_read_bytes = getattr(io_counters, "read_bytes", io_read_bytes)
+                        io_write_bytes = getattr(io_counters, "write_bytes", io_write_bytes)
+                    except (psutil.AccessDenied, AttributeError):
+                        pass
+
+                    try:
+                        ctx = ps_process.num_ctx_switches()
+                        voluntary_ctx_switches = getattr(ctx, "voluntary", voluntary_ctx_switches)
+                        involuntary_ctx_switches = getattr(ctx, "involuntary", involuntary_ctx_switches)
+                    except psutil.Error:
+                        pass
                     
                     time.sleep(0.01)  # Poll every 10ms
                 except psutil.NoSuchProcess:
@@ -134,29 +204,57 @@ class BenchmarkRunner:
                     
         except Exception as e:
             print(f"Warning: Could not monitor memory: {e}")
-            peak_memory = 0
-            cpu_percentages = []
         
         # Wait for process to complete
         stdout, stderr = process.communicate()
         end_time = time.perf_counter()
-        
+        usage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+
+        wall_time_s = end_time - start_time
+        user_cpu_s = max(0.0, usage_after.ru_utime - usage_before.ru_utime)
+        system_cpu_s = max(0.0, usage_after.ru_stime - usage_before.ru_stime)
+        cpu_time_s = user_cpu_s + system_cpu_s
+        effective_cores = cpu_time_s / wall_time_s if wall_time_s > 0 else 0.0
+
         # Calculate CPU statistics
         avg_cpu = sum(cpu_percentages) / len(cpu_percentages) if cpu_percentages else 0
         max_cpu = max(cpu_percentages) if cpu_percentages else 0
+        baseline_rss = baseline_rss or 0
+        peak_memory_mb = peak_rss / (1024 * 1024)
         
         return {
-            "runtime": end_time - start_time,
-            "peak_memory_bytes": peak_memory,
-            "peak_memory_mb": peak_memory / (1024 * 1024),
+            "runtime": wall_time_s,
+            "wall_time_s": wall_time_s,
+            "peak_memory_bytes": peak_rss,
+            "peak_memory_mb": peak_memory_mb,
+            "peak_rss_bytes": peak_rss,
+            "peak_rss_mb": peak_memory_mb,
+            "baseline_rss_bytes": baseline_rss,
+            "baseline_rss_mb": baseline_rss / (1024 * 1024),
+            "rss_delta_bytes": max(0, peak_rss - baseline_rss),
+            "rss_delta_mb": max(0, peak_rss - baseline_rss) / (1024 * 1024),
+            "peak_uss_bytes": peak_uss,
+            "peak_uss_mb": peak_uss / (1024 * 1024),
+            "rss_sample_count": rss_samples,
+            "user_cpu_s": user_cpu_s,
+            "system_cpu_s": system_cpu_s,
+            "cpu_time_s": cpu_time_s,
+            "effective_cores": effective_cores,
+            "cpu_utilization_ratio": effective_cores,
             "avg_cpu_percent": avg_cpu,
             "max_cpu_percent": max_cpu,
+            "max_threads": max(thread_counts) if thread_counts else 0,
+            "io_read_bytes": io_read_bytes,
+            "io_write_bytes": io_write_bytes,
+            "voluntary_ctx_switches": voluntary_ctx_switches,
+            "involuntary_ctx_switches": involuntary_ctx_switches,
             "exit_code": process.returncode,
             "stdout": stdout.decode('utf-8'),
             "stderr": stderr.decode('utf-8')
         }
     
-    def run_python_impl(self, dataset_path: str, n_clusters: int) -> Dict:
+    def run_python_impl(self, dataset_path: str, n_clusters: int,
+                        random_state: int = 42, init: str = "random") -> Dict:
         """
         Run pure Python K-Means implementation
         
@@ -176,7 +274,8 @@ class BenchmarkRunner:
             "--input", dataset_path,
             "--output", str(output_path),
             "--k_clusters_max", str(n_clusters),
-            "--random_state", "42"
+            "--random_state", str(random_state),
+            "--init", init,
         ]
         
         metrics = self.measure_process_metrics(cmd)
@@ -196,7 +295,8 @@ class BenchmarkRunner:
         metrics["implementation"] = "python"
         return metrics
     
-    def run_sklearn_impl(self, dataset_path: str, n_clusters: int) -> Dict:
+    def run_sklearn_impl(self, dataset_path: str, n_clusters: int,
+                         random_state: int = 42, sklearn_n_init: int = 10) -> Dict:
         """
         Run scikit-learn K-Means implementation
         
@@ -216,7 +316,8 @@ class BenchmarkRunner:
             "--input", dataset_path,
             "--output", str(output_path),
             "--k_clusters_max", str(n_clusters),
-            "--random_state", "42"
+            "--random_state", str(random_state),
+            "--n_init", str(sklearn_n_init),
         ]
         
         metrics = self.measure_process_metrics(cmd)
@@ -236,7 +337,8 @@ class BenchmarkRunner:
         metrics["implementation"] = "sklearn"
         return metrics
     
-    def run_rust_impl(self, dataset_path: str, n_clusters: int) -> Dict:
+    def run_rust_impl(self, dataset_path: str, n_clusters: int,
+                      random_state: int = 42, init: str = "random") -> Dict:
         """
         Run Rust K-Means implementation
         
@@ -273,7 +375,8 @@ class BenchmarkRunner:
             "--input", dataset_path,
             "--output", str(output_path),
             "--k_clusters_max", str(n_clusters),
-            "--random-state", "42"
+            "--random-state", str(random_state),
+            "--init", init,
         ]
         
         metrics = self.measure_process_metrics(cmd)
@@ -293,7 +396,9 @@ class BenchmarkRunner:
         metrics["implementation"] = "rust"
         return metrics
 
-    def run_rust_parallel_impl(self, dataset_path: str, n_clusters: int) -> Dict:
+    def run_rust_parallel_impl(self, dataset_path: str, n_clusters: int,
+                               random_state: int = 42, init: str = "random",
+                               threads: int = 0) -> Dict:
         """
         Run Rust K-Means implementation with Rayon parallelism (--parallel --threads 0).
 
@@ -329,9 +434,10 @@ class BenchmarkRunner:
             "--input", dataset_path,
             "--output", str(output_path),
             "--k_clusters_max", str(n_clusters),
-            "--random-state", "42",
+            "--random-state", str(random_state),
+            "--init", init,
             "--parallel",
-            "--threads", "0",  # 0 = all available cores (Rayon default)
+            "--threads", str(threads),  # 0 = all available cores (Rayon default)
         ]
 
         metrics = self.measure_process_metrics(cmd)
@@ -426,27 +532,38 @@ class BenchmarkRunner:
         labels = results_df[cluster_col].values
 
         metrics = {}
+        metrics['quality_sampled'] = False
+        metrics['quality_sample_size'] = len(X)
+
+        quality_X = X
+        quality_labels = labels
+        if len(X) > QUALITY_EXACT_SAMPLE_LIMIT:
+            sample_size = min(QUALITY_SAMPLE_SIZE, len(X))
+            rng = np.random.default_rng(0)
+            sample_idx = np.sort(rng.choice(len(X), size=sample_size, replace=False))
+            quality_X = X[sample_idx]
+            quality_labels = labels[sample_idx]
+            metrics['quality_sampled'] = True
+            metrics['quality_sample_size'] = sample_size
 
         try:
             # Calculate inertia
             metrics['inertia'] = self.calculate_inertia(dataset_path, results_df, n_clusters)
 
             # Only calculate other metrics if we have more than one cluster
-            unique_labels = np.unique(labels)
+            unique_labels = np.unique(quality_labels)
             if len(unique_labels) > 1:
                 # Silhouette Score (-1 to 1, higher is better)
-                metrics['silhouette_score'] = silhouette_score(X, labels)
+                metrics['silhouette_score'] = silhouette_score(quality_X, quality_labels)
 
                 # Davies-Bouldin Index (lower is better)
-                metrics['davies_bouldin_index'] = davies_bouldin_score(X, labels)
+                metrics['davies_bouldin_index'] = davies_bouldin_score(quality_X, quality_labels)
 
                 # Calinski-Harabasz Index (higher is better)
-                metrics['calinski_harabasz_index'] = calinski_harabasz_score(X, labels)
-
-            # Calculate samples per second throughput
-            n_samples = len(X)
-            if 'runtime' in metrics:
-                metrics['samples_per_second'] = n_samples / metrics['runtime']
+                metrics['calinski_harabasz_index'] = calinski_harabasz_score(
+                    quality_X,
+                    quality_labels,
+                )
 
         except Exception as e:
             print(f"Warning: Error calculating clustering metrics: {e}")
@@ -470,8 +587,100 @@ class BenchmarkRunner:
             metrics['normalized_mutual_info'] = np.nan
 
         return metrics
+
+    def add_derived_metrics(self, results_df: pd.DataFrame) -> pd.DataFrame:
+        """Add normalized resource, throughput, and paired speedup columns."""
+        df = results_df.copy()
+
+        if "wall_time_s" not in df.columns and "runtime" in df.columns:
+            df["wall_time_s"] = df["runtime"]
+        if "runtime" not in df.columns and "wall_time_s" in df.columns:
+            df["runtime"] = df["wall_time_s"]
+        if "peak_rss_mb" not in df.columns and "peak_memory_mb" in df.columns:
+            df["peak_rss_mb"] = df["peak_memory_mb"]
+        if "peak_memory_mb" not in df.columns and "peak_rss_mb" in df.columns:
+            df["peak_memory_mb"] = df["peak_rss_mb"]
+
+        k_max = df.get("k_max", df.get("n_clusters", pd.Series(1, index=df.index))).clip(lower=1)
+        wall_time = df["wall_time_s"].replace(0, np.nan)
+        cpu_time = df.get("cpu_time_s", pd.Series(np.nan, index=df.index)).replace(0, np.nan)
+
+        df["input_values"] = df["n_samples"] * df["n_features"]
+        df["k_sweep_fits"] = k_max
+        df["k_sweep_sum_k"] = k_max * (k_max + 1) / 2
+        df["nominal_work_units"] = df["n_samples"] * df["n_features"] * df["k_sweep_sum_k"]
+        df["samples_per_second"] = df["n_samples"] / wall_time
+        df["sample_features_per_second"] = df["input_values"] / wall_time
+        df["work_units_per_second"] = df["nominal_work_units"] / wall_time
+        df["wall_seconds_per_1k_samples"] = wall_time * 1000 / df["n_samples"]
+        df["cpu_seconds_per_1k_samples"] = cpu_time * 1000 / df["n_samples"]
+        df["rss_mb_per_1k_samples"] = df["peak_rss_mb"] * 1000 / df["n_samples"]
+        df["rss_bytes_per_sample"] = df["peak_rss_mb"] * 1024 * 1024 / df["n_samples"]
+        df["rss_bytes_per_sample_feature"] = (
+            df["peak_rss_mb"] * 1024 * 1024 / df["input_values"].replace(0, np.nan)
+        )
+        df["samples_per_cpu_second"] = df["n_samples"] / cpu_time
+        df["work_units_per_cpu_second"] = df["nominal_work_units"] / cpu_time
+        df["cpu_efficiency_wall_over_cpu"] = wall_time / cpu_time
+
+        paired_keys = [
+            key
+            for key in (
+                "run_id",
+                "repeat_index",
+                "dataset_seed",
+                "random_state",
+                "n_samples",
+                "n_features",
+                "n_clusters",
+                "k_max",
+                "init",
+                "cluster_std",
+                "cluster_separation",
+            )
+            if key in df.columns
+        ]
+        if paired_keys:
+            runtime_by_impl = df.pivot_table(
+                index=paired_keys,
+                columns="implementation",
+                values="wall_time_s",
+                aggfunc="first",
+            )
+            if "python" in runtime_by_impl.columns:
+                python_runtime = runtime_by_impl["python"].rename("_python_wall_time_s")
+                df = df.merge(python_runtime, left_on=paired_keys, right_index=True, how="left")
+                df["speedup_vs_python"] = df["_python_wall_time_s"] / df["wall_time_s"]
+                df.drop(columns=["_python_wall_time_s"], inplace=True)
+            if "rust" in runtime_by_impl.columns:
+                rust_runtime = runtime_by_impl["rust"].rename("_rust_wall_time_s")
+                df = df.merge(rust_runtime, left_on=paired_keys, right_index=True, how="left")
+                df["speedup_vs_rust_serial"] = df["_rust_wall_time_s"] / df["wall_time_s"]
+                df.drop(columns=["_rust_wall_time_s"], inplace=True)
+                if "requested_threads" in df.columns:
+                    requested_threads = df["requested_threads"].replace(0, np.nan)
+                    df["parallel_efficiency"] = (
+                        df["speedup_vs_rust_serial"] / requested_threads
+                    )
+
+        return df
     
-    def run_experiment(self, n_samples: int, n_features: int, n_clusters: int) -> List[Dict]:
+    def run_experiment(
+        self,
+        n_samples: int,
+        n_features: int,
+        n_clusters: int,
+        *,
+        repeat_index: int = 1,
+        dataset_seed: int = 42,
+        random_state: int = 42,
+        run_id: str = "default",
+        init: str = "random",
+        sklearn_n_init: int = 10,
+        rust_parallel_threads: int = 0,
+        cluster_std: float = 0.5,
+        cluster_separation: float = 3.0,
+    ) -> List[Dict]:
         """
         Run a single experiment with all implementations
         
@@ -486,41 +695,86 @@ class BenchmarkRunner:
         results = []
         
         # Generate dataset
-        dataset_path = self.generate_dataset(n_samples, n_features, n_clusters)
-        
-        # Run Python implementation
-        python_metrics = self.run_python_impl(dataset_path, n_clusters)
-        python_metrics.update({
+        dataset_path = self.generate_dataset(
+            n_samples,
+            n_features,
+            n_clusters,
+            random_state=dataset_seed,
+            cluster_std=cluster_std,
+            cluster_separation=cluster_separation,
+        )
+        dataset_id = Path(dataset_path).stem
+        labels_path = Path(dataset_path).with_name(Path(dataset_path).stem + "_labels.npy")
+        common_metadata: dict[str, Any] = {
+            "run_id": run_id,
+            "repeat_index": repeat_index,
+            "dataset_seed": dataset_seed,
+            "random_state": random_state,
+            "dataset_id": dataset_id,
+            "dataset_path": dataset_path,
+            "labels_path": str(labels_path),
             "n_samples": n_samples,
             "n_features": n_features,
-            "n_clusters": n_clusters
+            "n_clusters": n_clusters,
+            "k_max": n_clusters,
+            "init": init,
+            "sklearn_n_init": sklearn_n_init,
+            "cluster_std": cluster_std,
+            "cluster_separation": cluster_separation,
+        }
+        
+        # Run Python implementation
+        python_metrics = self.run_python_impl(dataset_path, n_clusters, random_state, init)
+        python_metrics.update({
+            **common_metadata,
+            "parallel": False,
+            "requested_threads": 1,
+            "actual_threads": python_metrics.get("max_threads", 0),
+            "restart_policy": "single-start",
         })
         results.append(python_metrics)
         
         # Run scikit-learn implementation
-        sklearn_metrics = self.run_sklearn_impl(dataset_path, n_clusters)
+        sklearn_metrics = self.run_sklearn_impl(
+            dataset_path,
+            n_clusters,
+            random_state=random_state,
+            sklearn_n_init=sklearn_n_init,
+        )
         sklearn_metrics.update({
-            "n_samples": n_samples,
-            "n_features": n_features,
-            "n_clusters": n_clusters
+            **common_metadata,
+            "parallel": False,
+            "requested_threads": 1,
+            "actual_threads": sklearn_metrics.get("max_threads", 0),
+            "restart_policy": f"sklearn-n_init-{sklearn_n_init}",
         })
         results.append(sklearn_metrics)
         
         # Run Rust implementation (serial)
-        rust_metrics = self.run_rust_impl(dataset_path, n_clusters)
+        rust_metrics = self.run_rust_impl(dataset_path, n_clusters, random_state, init)
         rust_metrics.update({
-            "n_samples": n_samples,
-            "n_features": n_features,
-            "n_clusters": n_clusters
+            **common_metadata,
+            "parallel": False,
+            "requested_threads": 1,
+            "actual_threads": rust_metrics.get("max_threads", 0),
+            "restart_policy": "single-start",
         })
         results.append(rust_metrics)
 
         # Run Rust implementation (Rayon parallel) — reuses the same dataset file
-        rust_parallel_metrics = self.run_rust_parallel_impl(dataset_path, n_clusters)
+        rust_parallel_metrics = self.run_rust_parallel_impl(
+            dataset_path,
+            n_clusters,
+            random_state=random_state,
+            init=init,
+            threads=rust_parallel_threads,
+        )
         rust_parallel_metrics.update({
-            "n_samples": n_samples,
-            "n_features": n_features,
-            "n_clusters": n_clusters
+            **common_metadata,
+            "parallel": True,
+            "requested_threads": rust_parallel_threads,
+            "actual_threads": rust_parallel_metrics.get("max_threads", 0),
+            "restart_policy": "single-start",
         })
         results.append(rust_parallel_metrics)
 
@@ -542,30 +796,59 @@ class BenchmarkRunner:
         sample_sizes = config.get("sample_sizes", [1000, 2000, 4000, 8000, 16000])
         feature_counts = config.get("feature_counts", [2, 4, 8, 16, 32, 64])
         cluster_counts = config.get("cluster_counts", [2, 4, 8, 16, 32, 64])
+        repeats = int(config.get("repeats", 1))
+        seed_base = int(config.get("seed_base", 42))
+        init = config.get("init", "random")
+        sklearn_n_init = int(config.get("sklearn_n_init", 10))
+        rust_parallel_threads = int(config.get("rust_parallel_threads", 0))
+        cluster_std = float(config.get("cluster_std", 0.5))
+        cluster_separation = float(config.get("cluster_separation", 3.0))
+        run_id = str(config.get("run_id") or datetime.now().strftime("%Y%m%d_%H%M%S"))
         
-        total_experiments = len(sample_sizes) * len(feature_counts) * len(cluster_counts)
+        total_experiments = len(sample_sizes) * len(feature_counts) * len(cluster_counts) * repeats
         experiment_num = 0
         
         print(f"Running {total_experiments} experiments...")
         print("=" * 60)
-        
-        for n_samples in sample_sizes:
-            for n_features in feature_counts:
-                for n_clusters in cluster_counts:
-                    experiment_num += 1
-                    print(f"\nExperiment {experiment_num}/{total_experiments}")
-                    print(f"Parameters: samples={n_samples}, features={n_features}, clusters={n_clusters}")
-                    print("-" * 40)
-                    
-                    try:
-                        results = self.run_experiment(n_samples, n_features, n_clusters)
-                        all_results.extend(results)
-                    except Exception as e:
-                        print(f"Error in experiment: {e}")
-                        continue
+
+        for repeat_index in range(1, repeats + 1):
+            dataset_seed = seed_base + repeat_index - 1
+            random_state = seed_base + repeat_index - 1
+            for n_samples in sample_sizes:
+                for n_features in feature_counts:
+                    for n_clusters in cluster_counts:
+                        experiment_num += 1
+                        print(f"\nExperiment {experiment_num}/{total_experiments}")
+                        print(
+                            "Parameters: "
+                            f"repeat={repeat_index}/{repeats}, seed={random_state}, "
+                            f"samples={n_samples}, features={n_features}, clusters={n_clusters}, "
+                            f"init={init}, sklearn_n_init={sklearn_n_init}"
+                        )
+                        print("-" * 40)
+
+                        try:
+                            results = self.run_experiment(
+                                n_samples,
+                                n_features,
+                                n_clusters,
+                                repeat_index=repeat_index,
+                                dataset_seed=dataset_seed,
+                                random_state=random_state,
+                                run_id=run_id,
+                                init=init,
+                                sklearn_n_init=sklearn_n_init,
+                                rust_parallel_threads=rust_parallel_threads,
+                                cluster_std=cluster_std,
+                                cluster_separation=cluster_separation,
+                            )
+                            all_results.extend(results)
+                        except Exception as e:
+                            print(f"Error in experiment: {e}")
+                            continue
         
         # Convert to DataFrame
-        results_df = pd.DataFrame(all_results)
+        results_df = self.add_derived_metrics(pd.DataFrame(all_results))
         
         # Save results
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -595,13 +878,20 @@ class BenchmarkRunner:
             
             # Performance metrics
             summary_lines.append("Performance Metrics:")
-            summary_lines.append(f"  Average runtime: {impl_df['runtime'].mean():.3f} seconds")
-            summary_lines.append(f"  Average memory: {impl_df['peak_memory_mb'].mean():.1f} MB")
+            summary_lines.append(f"  Median wall time: {impl_df['wall_time_s'].median():.3f} seconds")
+            summary_lines.append(f"  IQR wall time: {(impl_df['wall_time_s'].quantile(0.75) - impl_df['wall_time_s'].quantile(0.25)):.3f} seconds")
+            summary_lines.append(f"  Median sampled RSS: {impl_df['peak_rss_mb'].median():.1f} MB")
+            summary_lines.append(f"  Median RSS / 1k samples: {impl_df['rss_mb_per_1k_samples'].median():.2f} MB")
+            if 'cpu_time_s' in impl_df.columns:
+                summary_lines.append(f"  Median CPU time: {impl_df['cpu_time_s'].median():.3f} seconds")
+                summary_lines.append(f"  Median effective cores: {impl_df['effective_cores'].median():.2f}")
             if 'avg_cpu_percent' in impl_df.columns:
                 summary_lines.append(f"  Average CPU usage: {impl_df['avg_cpu_percent'].mean():.1f}%")
                 summary_lines.append(f"  Max CPU usage: {impl_df['max_cpu_percent'].mean():.1f}%")
             if 'samples_per_second' in impl_df.columns:
-                summary_lines.append(f"  Throughput: {impl_df['samples_per_second'].mean():.0f} samples/sec")
+                summary_lines.append(f"  Median throughput: {impl_df['samples_per_second'].median():.0f} samples/sec")
+            if 'work_units_per_second' in impl_df.columns:
+                summary_lines.append(f"  Median nominal work throughput: {impl_df['work_units_per_second'].median():.0f} units/sec")
             
             # Clustering quality metrics
             summary_lines.append("\nClustering Quality Metrics:")
@@ -621,24 +911,22 @@ class BenchmarkRunner:
         # Calculate speedup ratios (using Python as baseline)
         if 'python' in results_df['implementation'].values:
             python_df = results_df[results_df['implementation'] == 'python']
-            python_runtime = python_df['runtime'].mean()
+            python_runtime = python_df['wall_time_s'].median()
             
             summary_lines.append("\nSpeedup relative to Python implementation:")
             for impl in results_df['implementation'].unique():
                 if impl != 'python':
                     impl_df = results_df[results_df['implementation'] == impl]
-                    impl_runtime = impl_df['runtime'].mean()
+                    impl_runtime = impl_df['wall_time_s'].median()
                     speedup = python_runtime / impl_runtime
-                    summary_lines.append(f"  {impl.upper()}: {speedup:.2f}x faster")
+                    summary_lines.append(f"  {impl.upper()}: {speedup:.2f}x faster by median wall time")
         
         # Memory efficiency comparison
         summary_lines.append("\nMemory efficiency (MB per 1000 samples):")
         for impl in results_df['implementation'].unique():
             impl_df = results_df[results_df['implementation'] == impl]
-            # Calculate memory per 1000 samples
-            impl_df['memory_per_1k_samples'] = (impl_df['peak_memory_mb'] / impl_df['n_samples']) * 1000
-            avg_memory_efficiency = impl_df['memory_per_1k_samples'].mean()
-            summary_lines.append(f"  {impl.upper()}: {avg_memory_efficiency:.2f} MB/1k samples")
+            avg_memory_efficiency = impl_df['rss_mb_per_1k_samples'].median()
+            summary_lines.append(f"  {impl.upper()}: {avg_memory_efficiency:.2f} MB/1k samples (median sampled RSS)")
         
         # Save summary
         summary_file = self.results_dir / f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
@@ -651,108 +939,156 @@ class BenchmarkRunner:
         
     def generate_plots(self, results_df: pd.DataFrame):
         """Generate comparison plots for benchmark results"""
-        # Local palette matching the project-wide unified colours.  Defined here
-        # rather than imported from build_dashboard to avoid a cross-module
-        # coupling that would break if the dashboard is unavailable at import time.
-        RUNNER_PALETTE: dict[str, str] = {
-            "python":        "#3776AB",
-            "rust":          "#CE422B",
-            "rust_parallel": "#A0522D",
-            "sklearn":       "#F7931E",
-        }
-        DISPLAY_NAMES: dict[str, str] = {
-            "python":        "Python",
-            "rust":          "Rust",
-            "rust_parallel": "Rust - Parallel",
-            "sklearn":       "scikit-learn",
-        }
-
-        def _palette(impl: str) -> str:
-            return RUNNER_PALETTE.get(impl.lower(), "#888888")
-
-        def _label(impl: str) -> str:
-            return DISPLAY_NAMES.get(impl.lower(), impl)
-
         try:
             import matplotlib.pyplot as plt
-            import seaborn as sns
 
-            # Set style
-            plt.style.use('seaborn-v0_8-darkgrid')
-            sns.set_palette("husl")
+            results_df = self.add_derived_metrics(results_df)
+            impl_order = ordered_implementations(results_df['implementation'].unique())
 
-            # Create figure with subplots
             fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-            fig.suptitle('K-Means Implementation Comparison', fontsize=16)
+            fig.suptitle('K-Means implementation comparison', fontsize=15, fontweight='bold')
+            subtitle = (
+                f"{len(results_df)} rows · end-to-end CLI k-sweep · "
+                "nominal work = n_samples x n_features x sum(k)"
+            )
+            fig.text(0.5, 0.965, subtitle, ha='center', va='top', fontsize=9, color='#666666')
 
-            # 1. Runtime comparison — log-y because values span orders of magnitude;
-            #    linear scale would squash the fast implementations into invisibility.
+            def plot_metric(ax, y_col: str, ylabel: str, title: str) -> None:
+                default_offsets = {
+                    'python': (6, -2),
+                    'rust': (6, -10),
+                    'rust_parallel': (6, 6),
+                    'sklearn': (6, 14),
+                }
+                offset_by_metric = {
+                    'wall_time_s': {
+                        'python': (8, 12),
+                        'rust': (8, 0),
+                        'rust_parallel': (8, -12),
+                        'sklearn': (8, -24),
+                    },
+                    'work_units_per_second': {
+                        'python': (6, -8),
+                        'rust': (6, -18),
+                        'rust_parallel': (6, 12),
+                        'sklearn': (6, 8),
+                    },
+                    'peak_rss_mb': {
+                        'python': (8, 14),
+                        'rust': (8, -14),
+                        'rust_parallel': (8, 0),
+                        'sklearn': (8, -10),
+                    },
+                }
+                label_offsets = offset_by_metric.get(y_col, default_offsets)
+                for impl in impl_order:
+                    impl_df = results_df[results_df['implementation'] == impl]
+                    grp = (
+                        impl_df.groupby('nominal_work_units')[y_col]
+                        .median()
+                        .dropna()
+                        .sort_index()
+                    )
+                    if grp.empty:
+                        continue
+                    ax.plot(
+                        grp.index,
+                        grp.values,
+                        marker=mpl_marker(impl),
+                        markersize=5,
+                        lw=1.8,
+                        color=color(impl),
+                        alpha=0.85,
+                        label=display_name(impl),
+                    )
+                    last_x, last_y = grp.index[-1], grp.values[-1]
+                    label_offset = label_offsets.get(impl, (6, 0))
+                    ax.annotate(
+                        display_name(impl),
+                        xy=(last_x, last_y),
+                        xytext=label_offset,
+                        textcoords='offset points',
+                        va='center',
+                        fontsize=8,
+                        color=color(impl),
+                        bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.72),
+                        clip_on=False,
+                    )
+                ax.set_xscale('log', base=2)
+                ax.set_yscale('log', base=2)
+                ax.set_xlabel('Nominal k-sweep work (log2)')
+                ax.set_ylabel(ylabel)
+                ax.set_title(title, fontsize=11)
+                ax.grid(True, which='major', ls=':', alpha=0.35)
+                ax.margins(x=0.18)
+
             ax = axes[0, 0]
-            impl_order = sorted(results_df['implementation'].unique())
-            sns.boxplot(
-                data=results_df, x='implementation', y='runtime', ax=ax,
-                order=impl_order,
-                palette={impl: _palette(impl) for impl in impl_order},
+            plot_metric(
+                ax,
+                'wall_time_s',
+                'Runtime (s, log2)',
+                'Runtime vs matched workload',
             )
-            ax.set_yscale('log')
-            ax.set_title('Runtime Distribution')
-            ax.set_ylabel('Runtime (seconds, log scale)')
-            ax.set_xlabel('Implementation')
-            ax.set_xticklabels([_label(t.get_text()) for t in ax.get_xticklabels()])
 
-            # 2. Memory usage comparison
             ax = axes[0, 1]
-            sns.boxplot(
-                data=results_df, x='implementation', y='peak_memory_mb', ax=ax,
-                order=impl_order,
-                palette={impl: _palette(impl) for impl in impl_order},
+            plot_metric(
+                ax,
+                'work_units_per_second',
+                'Nominal work units / s (log2)',
+                'Throughput vs matched workload',
             )
-            ax.set_title('Memory Usage Distribution')
-            ax.set_ylabel('Peak Memory (MB)')
-            ax.set_xlabel('Implementation')
-            ax.set_xticklabels([_label(t.get_text()) for t in ax.get_xticklabels()])
 
-            # 3. Scalability plot (runtime vs data size) with ±1σ variance band.
             ax = axes[1, 0]
-            for impl in impl_order:
-                impl_df = results_df[results_df['implementation'] == impl]
-                grp = impl_df.groupby('n_samples')['runtime'].agg(['mean', 'std'])
-                color = _palette(impl)
-                ax.plot(grp.index, grp['mean'], marker='o', label=_label(impl),
-                        color=color)
-                ax.fill_between(
-                    grp.index,
-                    grp['mean'] - grp['std'].fillna(0),
-                    grp['mean'] + grp['std'].fillna(0),
-                    color=color, alpha=0.20,
-                )
-            ax.set_xscale('log')
-            ax.set_yscale('log')
-            ax.set_title('Scalability: Runtime vs Data Size')
-            ax.set_xlabel('Number of Samples')
-            ax.set_ylabel('Runtime (seconds)')
-            ax.legend()
-            ax.grid(True, alpha=0.3)
+            plot_metric(
+                ax,
+                'peak_rss_mb',
+                'Sampled RSS (MB, log2)',
+                'Memory vs matched workload',
+            )
 
-            # 4. Quality comparison (if available)
             ax = axes[1, 1]
-            if 'silhouette_score' in results_df.columns:
-                quality_metrics = results_df.groupby('implementation')['silhouette_score'].mean()
-                bar_colors = [_palette(impl) for impl in quality_metrics.index]
-                bar_labels = [_label(impl) for impl in quality_metrics.index]
-                bars = ax.bar(bar_labels, quality_metrics.values, color=bar_colors)
-                ax.set_title('Average Clustering Quality (Silhouette Score)')
-                ax.set_ylabel('Silhouette Score')
-                ax.set_xlabel('Implementation')
+            quality_col = None
+            quality_label = None
+            if 'adjusted_rand_index' in results_df.columns and results_df['adjusted_rand_index'].notna().any():
+                quality_col = 'adjusted_rand_index'
+                quality_label = 'Adjusted Rand Index'
+            elif 'silhouette_score' in results_df.columns and results_df['silhouette_score'].notna().any():
+                quality_col = 'silhouette_score'
+                quality_label = 'Silhouette score'
+
+            if quality_col:
+                for impl in impl_order:
+                    impl_df = results_df[results_df['implementation'] == impl]
+                    grp = (
+                        impl_df.groupby('nominal_work_units')
+                        .agg(wall_time_s=('wall_time_s', 'median'), quality=(quality_col, 'median'))
+                        .dropna()
+                        .sort_values('wall_time_s')
+                    )
+                    if grp.empty:
+                        continue
+                    ax.scatter(
+                        grp['wall_time_s'],
+                        grp['quality'],
+                        marker=mpl_marker(impl),
+                        s=34,
+                        color=color(impl),
+                        alpha=0.85,
+                        label=display_name(impl),
+                    )
+                ax.set_xscale('log', base=2)
                 ax.set_ylim(0, 1)
+                ax.set_title('Quality vs runtime frontier', fontsize=11)
+                ax.set_xlabel('Runtime (s, log2)')
+                ax.set_ylabel(quality_label)
+                ax.grid(True, which='major', ls=':', alpha=0.35)
+                ax.margins(x=0.08)
+                ax.legend(fontsize=8, loc='lower right', frameon=False)
+            else:
+                ax.axis('off')
+                ax.text(0.5, 0.5, 'No quality metrics available', ha='center', va='center')
 
-                # Add value labels on bars
-                for bar in bars:
-                    height = bar.get_height()
-                    ax.text(bar.get_x() + bar.get_width() / 2., height,
-                            f'{height:.3f}', ha='center', va='bottom')
-
-            plt.tight_layout()
+            plt.tight_layout(rect=(0, 0, 1, 0.94))
 
             # Save plot
             plot_file = self.results_dir / f"benchmark_plots_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
@@ -777,6 +1113,14 @@ def parse_arguments():
     parser.add_argument('--sample-sizes', type=int, nargs='+', default=None, help='List of sample sizes to test')
     parser.add_argument('--feature-counts', type=int, nargs='+', default=None, help='List of feature counts to test')
     parser.add_argument('--cluster-counts', type=int, nargs='+', default=None, help='List of cluster counts to test')
+    parser.add_argument('--repeats', type=int, default=1, help='Paired repeats per workload cell')
+    parser.add_argument('--seed-base', type=int, default=42, help='Base seed for dataset and algorithm repeats')
+    parser.add_argument('--init', choices=["random", "k-means++"], default="random", help='Init policy for Python/Rust implementations')
+    parser.add_argument('--sklearn-n-init', type=int, default=10, help='Number of scikit-learn restarts per k')
+    parser.add_argument('--rust-parallel-threads', type=int, default=0, help='Rayon threads for rust_parallel; 0 means all cores')
+    parser.add_argument('--cluster-std', type=float, default=0.5, help='Synthetic cluster standard deviation')
+    parser.add_argument('--cluster-separation', type=float, default=3.0, help='Synthetic cluster separation')
+    parser.add_argument('--run-id', type=str, default=None, help='Run identifier stored in the results CSV')
     parser.add_argument('--results-dir', type=str, default='results', help='Directory to save results')
     parser.add_argument('--data-dir', type=str, default='data', help='Directory to save/load datasets' )
     
@@ -805,6 +1149,17 @@ def main():
             "feature_counts": args.feature_counts or [2, 4, 8, 16, 32, 64, 128],
             "cluster_counts": args.cluster_counts or [64]
         }
+
+    config.update({
+        "repeats": args.repeats,
+        "seed_base": args.seed_base,
+        "init": args.init,
+        "sklearn_n_init": args.sklearn_n_init,
+        "rust_parallel_threads": args.rust_parallel_threads,
+        "cluster_std": args.cluster_std,
+        "cluster_separation": args.cluster_separation,
+        "run_id": args.run_id,
+    })
     
     print("K-Means Clustering Benchmark Runner")
     print("=" * 60)
@@ -812,6 +1167,12 @@ def main():
     print(f"  Sample sizes: {config['sample_sizes']}")
     print(f"  Feature counts: {config['feature_counts']}")
     print(f"  Cluster counts: {config['cluster_counts']}")
+    print(f"  Repeats: {config['repeats']}")
+    print(f"  Seed base: {config['seed_base']}")
+    print(f"  Init policy: {config['init']}")
+    print(f"  sklearn n_init: {config['sklearn_n_init']}")
+    print(f"  Rust parallel threads: {config['rust_parallel_threads'] or 'all cores'}")
+    print(f"  Cluster std/separation: {config['cluster_std']} / {config['cluster_separation']}")
     print(f"  Results directory: {args.results_dir}")
     print(f"  Data directory: {args.data_dir}")
     print("=" * 60)
