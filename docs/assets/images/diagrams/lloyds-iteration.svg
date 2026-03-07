@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" font-family="Newsreader, Georgia, serif" fill="none">
+  <!-- ============================================================
+       Lloyd's algorithm: assign -> update -> converged
+       Tokens: paper #fffff8 ink #151515 faint #595959 rule #dcdcd4
+               accent #a32015  python #3d6b9e  sklearn #c98c1f
+       ============================================================ -->
+  <rect x="0" y="0" width="960" height="360" fill="#fffff8"/>
+
+  <!-- ============ PANEL 1 — ASSIGN ============ -->
+  <g>
+    <!-- frame -->
+    <rect x="24" y="24" width="272" height="272" stroke="#dcdcd4" stroke-width="1"/>
+
+    <!-- assignment lines (faint) : points -> their nearest centroid -->
+    <g stroke="#bcbcb4" stroke-width="0.8">
+      <!-- left/blue cluster -> centroid A (96,110) -->
+      <line x1="72"  y1="86"  x2="96" y2="110"/>
+      <line x1="112" y1="78"  x2="96" y2="110"/>
+      <line x1="70"  y1="132" x2="96" y2="110"/>
+      <line x1="118" y1="140" x2="96" y2="110"/>
+      <line x1="92"  y1="160" x2="96" y2="110"/>
+      <!-- right/ochre cluster -> centroid B (212,196) -->
+      <line x1="186" y1="166" x2="212" y2="196"/>
+      <line x1="232" y1="158" x2="212" y2="196"/>
+      <line x1="180" y1="212" x2="212" y2="196"/>
+      <line x1="238" y1="214" x2="212" y2="196"/>
+      <line x1="208" y1="240" x2="212" y2="196"/>
+    </g>
+
+    <!-- blue-cluster points -->
+    <g fill="#3d6b9e">
+      <circle cx="72"  cy="86"  r="3.4"/>
+      <circle cx="112" cy="78"  r="3.4"/>
+      <circle cx="70"  cy="132" r="3.4"/>
+      <circle cx="118" cy="140" r="3.4"/>
+      <circle cx="92"  cy="160" r="3.4"/>
+    </g>
+    <!-- ochre-cluster points -->
+    <g fill="#c98c1f">
+      <circle cx="186" cy="166" r="3.4"/>
+      <circle cx="232" cy="158" r="3.4"/>
+      <circle cx="180" cy="212" r="3.4"/>
+      <circle cx="238" cy="214" r="3.4"/>
+      <circle cx="208" cy="240" r="3.4"/>
+    </g>
+
+    <!-- centroid crosshairs -->
+    <g stroke="#3d6b9e" stroke-width="1.4">
+      <line x1="96" y1="100" x2="96" y2="120"/>
+      <line x1="86" y1="110" x2="106" y2="110"/>
+    </g>
+    <g stroke="#c98c1f" stroke-width="1.4">
+      <line x1="212" y1="186" x2="212" y2="206"/>
+      <line x1="202" y1="196" x2="222" y2="196"/>
+    </g>
+
+    <!-- panel label -->
+    <text x="160" y="324" text-anchor="middle" font-style="italic" font-size="16" fill="#151515">assign</text>
+    <text x="160" y="344" text-anchor="middle" font-size="12.5" fill="#595959">each point to its nearest centroid</text>
+  </g>
+
+  <!-- arrow panel1 -> panel2 -->
+  <g stroke="#a32015" stroke-width="1.2" fill="none">
+    <path d="M 306 160 L 338 160"/>
+    <path d="M 332 155 L 338 160 L 332 165"/>
+  </g>
+
+  <!-- ============ PANEL 2 — UPDATE ============ -->
+  <g transform="translate(320,0)">
+    <rect x="24" y="24" width="272" height="272" stroke="#dcdcd4" stroke-width="1"/>
+
+    <!-- same points, recoloured by membership -->
+    <g fill="#3d6b9e">
+      <circle cx="72"  cy="86"  r="3.4"/>
+      <circle cx="112" cy="78"  r="3.4"/>
+      <circle cx="70"  cy="132" r="3.4"/>
+      <circle cx="118" cy="140" r="3.4"/>
+      <circle cx="92"  cy="160" r="3.4"/>
+    </g>
+    <g fill="#c98c1f">
+      <circle cx="186" cy="166" r="3.4"/>
+      <circle cx="232" cy="158" r="3.4"/>
+      <circle cx="180" cy="212" r="3.4"/>
+      <circle cx="238" cy="214" r="3.4"/>
+      <circle cx="208" cy="240" r="3.4"/>
+    </g>
+
+    <!-- old centroid positions (hollow, faint) — visibly offset from the new mean -->
+    <circle cx="103" cy="103" r="4" stroke="#9bb3cd" stroke-width="1" fill="#fffff8"/>
+    <circle cx="205" cy="204" r="4" stroke="#dfc188" stroke-width="1" fill="#fffff8"/>
+
+    <!-- movement arrows: old position -> new mean -->
+    <g stroke="#a32015" stroke-width="1" fill="none">
+      <path d="M 99 107 L 91 122"/>
+      <path d="M 87 116 L 90 123 L 95 118"/>
+      <path d="M 209 200 L 218 187"/>
+      <path d="M 213 187 L 219 186 L 218 192"/>
+    </g>
+
+    <!-- new centroid crosshairs (at the mean of current members) -->
+    <g stroke="#3d6b9e" stroke-width="1.4">
+      <line x1="88" y1="116" x2="88" y2="136"/>
+      <line x1="78" y1="126" x2="98" y2="126"/>
+    </g>
+    <g stroke="#c98c1f" stroke-width="1.4">
+      <line x1="221" y1="176" x2="221" y2="196"/>
+      <line x1="211" y1="186" x2="231" y2="186"/>
+    </g>
+
+    <text x="160" y="324" text-anchor="middle" font-style="italic" font-size="16" fill="#151515">update</text>
+    <text x="160" y="344" text-anchor="middle" font-size="12.5" fill="#595959">move each centroid to its members' mean</text>
+  </g>
+
+  <!-- arrow panel2 -> panel3 -->
+  <g stroke="#a32015" stroke-width="1.2" fill="none">
+    <path d="M 626 160 L 658 160"/>
+    <path d="M 652 155 L 658 160 L 652 165"/>
+  </g>
+
+  <!-- ============ PANEL 3 — CONVERGED ============ -->
+  <g transform="translate(640,0)">
+    <rect x="24" y="24" width="272" height="272" stroke="#dcdcd4" stroke-width="1"/>
+
+    <!-- settled partition: a thin Voronoi-style divider between the two regions -->
+    <path d="M 60 246 L 250 70" stroke="#dcdcd4" stroke-width="1" stroke-dasharray="3 4"/>
+
+    <g fill="#3d6b9e">
+      <circle cx="72"  cy="86"  r="3.4"/>
+      <circle cx="112" cy="78"  r="3.4"/>
+      <circle cx="70"  cy="132" r="3.4"/>
+      <circle cx="118" cy="140" r="3.4"/>
+      <circle cx="92"  cy="160" r="3.4"/>
+    </g>
+    <g fill="#c98c1f">
+      <circle cx="186" cy="166" r="3.4"/>
+      <circle cx="232" cy="158" r="3.4"/>
+      <circle cx="180" cy="212" r="3.4"/>
+      <circle cx="238" cy="214" r="3.4"/>
+      <circle cx="208" cy="240" r="3.4"/>
+    </g>
+
+    <!-- settled centroids -->
+    <g stroke="#3d6b9e" stroke-width="1.4">
+      <line x1="85" y1="108" x2="85" y2="128"/>
+      <line x1="75" y1="118" x2="95" y2="118"/>
+    </g>
+    <g stroke="#c98c1f" stroke-width="1.4">
+      <line x1="217" y1="181" x2="217" y2="201"/>
+      <line x1="207" y1="191" x2="227" y2="191"/>
+    </g>
+
+    <text x="160" y="324" text-anchor="middle" font-style="italic" font-size="16" fill="#151515">converged</text>
+    <text x="160" y="344" text-anchor="middle" font-size="12.5" fill="#595959">labels stop changing — fixed point</text>
+  </g>
+</svg>

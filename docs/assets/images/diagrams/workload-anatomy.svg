@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 332" font-family="Newsreader, Georgia, serif" fill="none">
+  <!-- ============================================================
+       What the benchmark actually times: one end-to-end CLI run.
+       process launch -> CSV read -> fit k = 1..k_max -> CSV write.
+       The fit segment is subdivided per-k; the bracket underneath
+       makes the point that the timer wraps the whole process, not
+       just the clustering kernel.
+       ============================================================ -->
+  <rect x="0" y="0" width="960" height="332" fill="#fffff8"/>
+
+  <text x="48" y="46" font-size="15" fill="#151515">One benchmarked CLI invocation, start to finish</text>
+  <text x="48" y="66" font-size="12.5" font-style="italic" fill="#595959">runner.py spawns the binary and wall-clock-times the whole subprocess</text>
+
+  <!-- baseline timeline axis -->
+  <line x1="48" y1="180" x2="912" y2="180" stroke="#595959" stroke-width="1"/>
+  <text x="48"  y="210" font-size="11.5" fill="#595959">t = 0</text>
+  <text x="912" y="210" text-anchor="end" font-size="11.5" fill="#595959">process exit</text>
+
+  <!-- ===== timeline segments (heights encode nothing; widths encode time share) ===== -->
+  <!-- launch -->
+  <rect x="48" y="96" width="70" height="60" stroke="#151515" stroke-width="1"/>
+  <!-- csv read -->
+  <rect x="118" y="96" width="118" height="60" stroke="#151515" stroke-width="1"/>
+  <!-- fit (the big middle, subdivided below) -->
+  <rect x="236" y="96" width="560" height="60" stroke="#b7410e" stroke-width="1.2"/>
+  <!-- csv write -->
+  <rect x="796" y="96" width="116" height="60" stroke="#151515" stroke-width="1"/>
+
+  <!-- segment labels (above) -->
+  <text x="83"  y="86" text-anchor="middle" font-size="11.5" fill="#151515">launch</text>
+  <text x="177" y="86" text-anchor="middle" font-size="12" fill="#151515">read CSV</text>
+  <text x="516" y="86" text-anchor="middle" font-size="13" fill="#b7410e">fit  k = 1 .. k_max</text>
+  <text x="854" y="86" text-anchor="middle" font-size="12" fill="#151515">write CSV</text>
+
+  <!-- sub-labels (inside, faint) -->
+  <text x="83"  y="142" text-anchor="middle" font-size="9.5" fill="#595959">exec +</text>
+  <text x="83"  y="152" text-anchor="middle" font-size="9.5" fill="#595959">load</text>
+  <text x="177" y="130" text-anchor="middle" font-size="10.5" fill="#595959">parse n rows</text>
+  <text x="177" y="144" text-anchor="middle" font-size="10.5" fill="#595959">&#215; d floats</text>
+  <text x="854" y="130" text-anchor="middle" font-size="10.5" fill="#595959">labels for</text>
+  <text x="854" y="144" text-anchor="middle" font-size="10.5" fill="#595959">every k</text>
+
+  <!-- ===== fit subdivided per k, growing left->right (each k costs ~k passes) ===== -->
+  <g stroke="#b7410e" stroke-width="0.8">
+    <line x1="266" y1="96" x2="266" y2="156"/>
+    <line x1="300" y1="96" x2="300" y2="156"/>
+    <line x1="340" y1="96" x2="340" y2="156"/>
+    <line x1="388" y1="96" x2="388" y2="156"/>
+    <line x1="446" y1="96" x2="446" y2="156"/>
+    <line x1="516" y1="96" x2="516" y2="156"/>
+    <line x1="600" y1="96" x2="600" y2="156"/>
+    <line x1="700" y1="96" x2="700" y2="156"/>
+  </g>
+  <!-- per-k tick labels under the fit band -->
+  <g font-size="9.5" fill="#595959" text-anchor="middle">
+    <text x="251" y="170">k=1</text>
+    <text x="320" y="170">2</text>
+    <text x="364" y="170">3</text>
+    <text x="417" y="170">4</text>
+    <text x="558" y="170">&#8230;</text>
+    <text x="748" y="170">k_max</text>
+  </g>
+
+  <!-- ===== the framing bracket: "this is what the timer measures" ===== -->
+  <g stroke="#a32015" stroke-width="1.2" fill="none">
+    <path d="M 48 236 L 48 248 L 912 248 L 912 236"/>
+    <path d="M 480 248 L 480 260"/>
+  </g>
+  <text x="480" y="278" text-anchor="middle" font-size="13" fill="#a32015">end-to-end CLI wall time &#8212; what the benchmark reports</text>
+
+  <!-- ===== contrast bracket: the kernel-only slice (fit segment only) ===== -->
+  <g stroke="#595959" stroke-width="1" fill="none" stroke-dasharray="3 3">
+    <path d="M 236 290 L 236 298 L 796 298 L 796 290"/>
+    <path d="M 516 298 L 516 304"/>
+  </g>
+  <text x="516" y="318" text-anchor="middle" font-size="11.5" font-style="italic" fill="#595959">clustering kernel only &#8212; not what is reported</text>
+</svg>

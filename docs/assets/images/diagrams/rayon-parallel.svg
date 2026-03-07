@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" font-family="Newsreader, Georgia, serif" fill="none">
+  <!-- ============================================================
+       Data-parallel Lloyd's step in Rayon (src/rust_impl/src/lib.rs).
+       MAP  : data.par_iter() slices the n x d rows into chunks across
+              4 workers; each worker computes argmin distance per row.
+       REDUCE: per-thread (sum,count) accumulators fold, then a reduce
+              tree merges them into the new centroids.  This is the
+              synchronization point.
+       Rust palette: #b7410e (workers) / #7a2e0c (reduce/merge).
+       ============================================================ -->
+  <rect x="0" y="0" width="960" height="580" fill="#fffff8"/>
+
+  <!-- ===== stage labels down the left margin ===== -->
+  <text x="40" y="58"  font-style="italic" font-size="13.5" fill="#595959">input</text>
+  <text x="40" y="150" font-style="italic" font-size="13.5" fill="#595959">map</text>
+  <text x="40" y="166" font-size="11.5" fill="#595959">(par_iter)</text>
+  <text x="40" y="390" font-style="italic" font-size="13.5" fill="#595959">reduce</text>
+  <text x="40" y="406" font-size="11.5" fill="#595959">(fold + tree)</text>
+
+  <!-- ===== INPUT: n x d matrix, sliced into 4 chunks ===== -->
+  <text x="480" y="34" text-anchor="middle" font-size="13.5" fill="#151515">data : Vec&lt;DataPoint&gt;  &#8212;  n &#215; d feature matrix</text>
+
+  <!-- matrix outline -->
+  <rect x="150" y="48" width="660" height="56" stroke="#151515" stroke-width="1.2"/>
+  <!-- chunk dividers -->
+  <line x1="315" y1="48" x2="315" y2="104" stroke="#151515" stroke-width="1.2"/>
+  <line x1="480" y1="48" x2="480" y2="104" stroke="#151515" stroke-width="1.2"/>
+  <line x1="645" y1="48" x2="645" y2="104" stroke="#151515" stroke-width="1.2"/>
+  <!-- faint row lines to read as a matrix -->
+  <g stroke="#dcdcd4" stroke-width="0.7">
+    <line x1="150" y1="62" x2="810" y2="62"/>
+    <line x1="150" y1="76" x2="810" y2="76"/>
+    <line x1="150" y1="90" x2="810" y2="90"/>
+  </g>
+  <text x="232" y="120" text-anchor="middle" font-size="11" fill="#595959">rows 0..n/4</text>
+  <text x="397" y="120" text-anchor="middle" font-size="11" fill="#595959">n/4..n/2</text>
+  <text x="562" y="120" text-anchor="middle" font-size="11" fill="#595959">n/2..3n/4</text>
+  <text x="727" y="120" text-anchor="middle" font-size="11" fill="#595959">3n/4..n</text>
+
+  <!-- fan-out lines: matrix chunks -> worker lanes -->
+  <g stroke="#b7410e" stroke-width="1" fill="none">
+    <path d="M 232 104 L 232 140"/>
+    <path d="M 397 104 L 397 140"/>
+    <path d="M 562 104 L 562 140"/>
+    <path d="M 727 104 L 727 140"/>
+  </g>
+
+  <!-- ===== 4 WORKER LANES (map: argmin) ===== -->
+  <g font-size="12">
+    <!-- lane template repeated x4 -->
+    <!-- worker 0 -->
+    <rect x="150" y="140" width="164" height="200" stroke="#b7410e" stroke-width="1.2"/>
+    <text x="232" y="160" text-anchor="middle" fill="#b7410e" font-style="italic">worker 0</text>
+    <line x1="150" y1="170" x2="314" y2="170" stroke="#dcdcd4" stroke-width="1"/>
+    <text x="232" y="192" text-anchor="middle" fill="#151515">for each row x:</text>
+    <text x="232" y="212" text-anchor="middle" fill="#151515">argmin&#8341; &#8741;x &#8722; &#956;&#8341;&#8741;&#178;</text>
+    <text x="232" y="240" text-anchor="middle" fill="#595959" font-size="11.5">&#8595; label + (sum,count)</text>
+    <text x="232" y="262" text-anchor="middle" fill="#595959" font-size="11.5">per cluster, private</text>
+    <!-- tiny private accumulator glyph -->
+    <rect x="196" y="278" width="72" height="44" stroke="#b7410e" stroke-width="0.9"/>
+    <line x1="196" y1="300" x2="268" y2="300" stroke="#b7410e" stroke-width="0.7"/>
+    <line x1="232" y1="278" x2="232" y2="322" stroke="#b7410e" stroke-width="0.7"/>
+    <text x="232" y="336" text-anchor="middle" fill="#595959" font-size="10">acc&#8320;</text>
+
+    <!-- worker 1 -->
+    <rect x="315" y="140" width="164" height="200" stroke="#b7410e" stroke-width="1.2"/>
+    <text x="397" y="160" text-anchor="middle" fill="#b7410e" font-style="italic">worker 1</text>
+    <line x1="315" y1="170" x2="479" y2="170" stroke="#dcdcd4" stroke-width="1"/>
+    <text x="397" y="192" text-anchor="middle" fill="#151515">for each row x:</text>
+    <text x="397" y="212" text-anchor="middle" fill="#151515">argmin&#8341; &#8741;x &#8722; &#956;&#8341;&#8741;&#178;</text>
+    <text x="397" y="240" text-anchor="middle" fill="#595959" font-size="11.5">&#8595; label + (sum,count)</text>
+    <text x="397" y="262" text-anchor="middle" fill="#595959" font-size="11.5">per cluster, private</text>
+    <rect x="361" y="278" width="72" height="44" stroke="#b7410e" stroke-width="0.9"/>
+    <line x1="361" y1="300" x2="433" y2="300" stroke="#b7410e" stroke-width="0.7"/>
+    <line x1="397" y1="278" x2="397" y2="322" stroke="#b7410e" stroke-width="0.7"/>
+    <text x="397" y="336" text-anchor="middle" fill="#595959" font-size="10">acc&#8321;</text>
+
+    <!-- worker 2 -->
+    <rect x="480" y="140" width="164" height="200" stroke="#b7410e" stroke-width="1.2"/>
+    <text x="562" y="160" text-anchor="middle" fill="#b7410e" font-style="italic">worker 2</text>
+    <line x1="480" y1="170" x2="644" y2="170" stroke="#dcdcd4" stroke-width="1"/>
+    <text x="562" y="192" text-anchor="middle" fill="#151515">for each row x:</text>
+    <text x="562" y="212" text-anchor="middle" fill="#151515">argmin&#8341; &#8741;x &#8722; &#956;&#8341;&#8741;&#178;</text>
+    <text x="562" y="240" text-anchor="middle" fill="#595959" font-size="11.5">&#8595; label + (sum,count)</text>
+    <text x="562" y="262" text-anchor="middle" fill="#595959" font-size="11.5">per cluster, private</text>
+    <rect x="526" y="278" width="72" height="44" stroke="#b7410e" stroke-width="0.9"/>
+    <line x1="526" y1="300" x2="598" y2="300" stroke="#b7410e" stroke-width="0.7"/>
+    <line x1="562" y1="278" x2="562" y2="322" stroke="#b7410e" stroke-width="0.7"/>
+    <text x="562" y="336" text-anchor="middle" fill="#595959" font-size="10">acc&#8322;</text>
+
+    <!-- worker 3 -->
+    <rect x="645" y="140" width="165" height="200" stroke="#b7410e" stroke-width="1.2"/>
+    <text x="727" y="160" text-anchor="middle" fill="#b7410e" font-style="italic">worker 3</text>
+    <line x1="645" y1="170" x2="810" y2="170" stroke="#dcdcd4" stroke-width="1"/>
+    <text x="727" y="192" text-anchor="middle" fill="#151515">for each row x:</text>
+    <text x="727" y="212" text-anchor="middle" fill="#151515">argmin&#8341; &#8741;x &#8722; &#956;&#8341;&#8741;&#178;</text>
+    <text x="727" y="240" text-anchor="middle" fill="#595959" font-size="11.5">&#8595; label + (sum,count)</text>
+    <text x="727" y="262" text-anchor="middle" fill="#595959" font-size="11.5">per cluster, private</text>
+    <rect x="691" y="278" width="72" height="44" stroke="#b7410e" stroke-width="0.9"/>
+    <line x1="691" y1="300" x2="763" y2="300" stroke="#b7410e" stroke-width="0.7"/>
+    <line x1="727" y1="278" x2="727" y2="322" stroke="#b7410e" stroke-width="0.7"/>
+    <text x="727" y="336" text-anchor="middle" fill="#595959" font-size="10">acc&#8323;</text>
+  </g>
+
+  <!-- "no shared writes" banner spanning the map stage -->
+  <text x="868" y="240" text-anchor="middle" font-size="11.5" font-style="italic" fill="#b7410e" transform="rotate(90 868 240)">embarrassingly parallel &#8212; no shared writes</text>
+
+  <!-- ============================================================
+       REDUCTION TREE  (merge per-thread accumulators)
+       Worker centres: 232 / 397 / 562 / 727.
+       Pair centres   : 314.5 / 644.5  (level-1 merges).
+       Root centre    : 480  (aligns with matrix centre).
+       Vertical grid  : acc bottoms 340 -> drop 362 -> merge row
+                        376..406 -> drop 428 -> root 444..480 -> output.
+       ============================================================ -->
+
+  <!-- level-1 connectors: 4 accumulators -> 2 pairwise merges -->
+  <g stroke="#7a2e0c" stroke-width="1.1" fill="none">
+    <!-- left pair (232,397) -> 314 -->
+    <path d="M 232 340 V 362 H 314"/>
+    <path d="M 397 340 V 362 H 314"/>
+    <path d="M 314 362 V 376"/>
+    <!-- right pair (562,727) -> 645 -->
+    <path d="M 562 340 V 362 H 645"/>
+    <path d="M 727 340 V 362 H 645"/>
+    <path d="M 645 362 V 376"/>
+  </g>
+  <!-- level-1 merge nodes (centred under each pair) -->
+  <rect x="262" y="376" width="104" height="30" stroke="#7a2e0c" stroke-width="1.1"/>
+  <text x="314" y="395" text-anchor="middle" font-size="11.5" fill="#7a2e0c">merge acc&#8320;&#8853;acc&#8321;</text>
+  <rect x="593" y="376" width="104" height="30" stroke="#7a2e0c" stroke-width="1.1"/>
+  <text x="645" y="395" text-anchor="middle" font-size="11.5" fill="#7a2e0c">merge acc&#8322;&#8853;acc&#8323;</text>
+
+  <!-- level-2 connectors: 2 partials -> root (centre 480) -->
+  <g stroke="#7a2e0c" stroke-width="1.1" fill="none">
+    <path d="M 314 406 V 428 H 480"/>
+    <path d="M 645 406 V 428 H 480"/>
+    <path d="M 480 428 V 444"/>
+  </g>
+
+  <!-- root reduce node -->
+  <rect x="346" y="444" width="268" height="40" stroke="#7a2e0c" stroke-width="1.4"/>
+  <text x="480" y="461" text-anchor="middle" font-size="12.5" fill="#7a2e0c">reduce</text>
+  <text x="480" y="477" text-anchor="middle" font-size="11.5" fill="#595959">&#931; sum, &#931; count per cluster</text>
+
+  <!-- output connector: root -> centroid box -->
+  <g stroke="#7a2e0c" stroke-width="1.1" fill="none">
+    <path d="M 480 484 V 506"/>
+    <path d="M 474 500 L 480 508 L 486 500"/>
+  </g>
+
+  <!-- output: new centroids -->
+  <rect x="346" y="508" width="268" height="44" stroke="#7a2e0c" stroke-width="1.4"/>
+  <text x="480" y="531" text-anchor="middle" font-size="14" fill="#151515">&#956;&#8341; = sum / count</text>
+  <text x="480" y="546" text-anchor="middle" font-size="11" fill="#595959">new centroids for the next iteration</text>
+
+  <!-- single synchronization point: horizontal leader to the root reduce -->
+  <g stroke="#a32015" stroke-width="1" fill="none">
+    <path d="M 614 464 H 666"/>
+  </g>
+  <text x="676" y="460" font-size="12" font-style="italic" fill="#a32015">the single</text>
+  <text x="676" y="475" font-size="12" font-style="italic" fill="#a32015">synchronization point</text>
+</svg>
