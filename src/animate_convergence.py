@@ -6,6 +6,11 @@ Reimplements Lloyd's loop here (rather than reusing KMeansClustering's fit
 directly) so we can record centroid + label history at each step without
 polluting the production class. The traced run mirrors KMeansClustering's
 control flow exactly, and a test asserts both produce identical final states.
+
+The five GIFs are styled through src/viz_style.py so they sit in the same
+editorial family as the static charts: paper off-white background, serif type,
+a muted print-like categorical palette (the demo.js PALETTE family), accent
+centroid crosshairs, and an unobtrusive inertia inset.
 """
 
 from __future__ import annotations
@@ -23,12 +28,34 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from sklearn.datasets import make_blobs, make_circles, make_moons
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "src" / "python_impl"))
 
 from kmeans import KMeansClustering  # noqa: E402
 
-PALETTE = ["#0ea5e9", "#dc2626", "#16a34a", "#a855f7",
-           "#f59e0b", "#0891b2", "#db2777", "#65a30d"]
+from viz_style import (  # noqa: E402
+    ACCENT,
+    INK,
+    INK_FAINT,
+    PAPER,
+    RULE,
+    SPINE,
+    apply_mpl_style,
+)
+
+# Muted, print-like categorical palette — kept byte-identical to docs/assets/js/
+# demo.js so the GIFs and the live in-browser demo color clusters the same way:
+# steel blue, rust, ochre, sage, dark rust, muted purple, terracotta, slate.
+PALETTE = [
+    "#3d6b9e", "#b7410e", "#c98c1f", "#5b7553",
+    "#7a2e0c", "#6a5687", "#9e5b3d", "#4f7a8c",
+]
+
+# Rendering geometry. ~1050 px square at dpi=150 reads crisply at any size the
+# 5-across strip (or a click-through) puts the GIF at — comfortably past the
+# ~720 px readable target and roughly double the previous effective resolution.
+FIG_INCHES = 7.0
+DPI = 150
 
 
 @dataclass
@@ -103,69 +130,84 @@ def run_lloyds(X: np.ndarray, k: int, init: str = "random",
 
 
 def animate(trace: LloydsTrace, X: np.ndarray, k: int, out_path: Path,
-            title: str | None = None, fps: int = 2) -> None:
-    fig, ax = plt.subplots(figsize=(6, 6))
-    fig.patch.set_facecolor("white")
+            title: str | None = None, fps: int = 2, hold: int = 5) -> None:
+    """Render a trace to a GIF.
+
+    `hold` repeats the converged final frame so the answer lingers; identical
+    repeated frames cost almost nothing in the GIF since they compress away.
+    """
+    apply_mpl_style()
+    fig, ax = plt.subplots(figsize=(FIG_INCHES, FIG_INCHES))
+    fig.patch.set_facecolor(PAPER)
+    ax.set_facecolor(PAPER)
 
     colors = [PALETTE[c % len(PALETTE)] for c in range(k)]
-    scatter = ax.scatter(X[:, 0], X[:, 1], s=12, alpha=0.55, edgecolor="none")
-    centroid_dots = ax.scatter([], [], s=320, marker="X",
-                                edgecolor="black", linewidth=1.8, zorder=5)
-    trail_lines = [ax.plot([], [], "-", color=colors[c],
-                            alpha=0.35, lw=1)[0] for c in range(k)]
+    scatter = ax.scatter(X[:, 0], X[:, 1], s=22, alpha=0.7, edgecolor="none", zorder=2)
+    # Centroid crosshairs: an ink-outlined accent "X" so the moving markers stay
+    # legible over any cluster color.
+    centroid_dots = ax.scatter([], [], s=420, marker="X", facecolor=ACCENT,
+                               edgecolor=INK, linewidth=1.6, zorder=6)
+    trail_lines = [ax.plot([], [], "-", color=INK_FAINT,
+                           alpha=0.45, lw=1.1, zorder=5)[0] for _ in range(k)]
 
     pad = 1.0
     ax.set_xlim(X[:, 0].min() - pad, X[:, 0].max() + pad)
     ax.set_ylim(X[:, 1].min() - pad, X[:, 1].max() + pad)
     ax.set_aspect("equal")
     ax.set_xticks([]); ax.set_yticks([])
+    # Minimal chrome: drop every spine, the scatter carries the frame itself.
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     base_title = title or f"Lloyd's K-Means — init={trace.init}, k={k}"
 
-    # Inset axes in the top-right corner: inertia vs iteration line plot.
-    # Width/height as fraction of main axes; loc=1 is upper-right.
-    ax_inset = inset_axes(ax, width="35%", height="28%", loc="upper right",
-                          borderpad=1.2)
-    ax_inset.set_facecolor("#f8f8f8")
-    ax_inset.tick_params(labelsize=6)
-    ax_inset.set_xlabel("iter", fontsize=6)
-    ax_inset.set_ylabel("inertia", fontsize=6)
-    ax_inset.set_title("inertia", fontsize=7, pad=2)
+    # Inertia-vs-iteration inset, top-right, kept editorial: paper face, a hair-
+    # line frame, a faint full curve for context, and an accent progress line.
+    ax_inset = inset_axes(ax, width="34%", height="26%", loc="upper right",
+                          borderpad=1.3)
+    ax_inset.set_facecolor(PAPER)
+    for side in ("top", "right"):
+        ax_inset.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax_inset.spines[side].set_color(SPINE)
+        ax_inset.spines[side].set_linewidth(0.7)
+    ax_inset.tick_params(labelsize=7, length=2, colors=INK_FAINT)
+    ax_inset.set_xlabel("iteration", fontsize=7, color=INK_FAINT)
+    ax_inset.set_title("inertia", fontsize=8, color=INK, pad=3)
     all_iters = list(range(len(trace.inertia_history)))
-    # Pre-draw the full background curve in light grey as context.
-    ax_inset.plot(all_iters, trace.inertia_history, color="#d1d5db", lw=1, zorder=1)
-    (inset_line,) = ax_inset.plot([], [], color="#dc2626", lw=1.5, zorder=2)
+    ax_inset.plot(all_iters, trace.inertia_history, color=RULE, lw=1.0, zorder=1)
+    (inset_line,) = ax_inset.plot([], [], color=ACCENT, lw=1.6, zorder=2)
+    (inset_head,) = ax_inset.plot([], [], "o", color=ACCENT, ms=3.5, zorder=3)
 
-    # Hold the converged state on the last few frames for readability.
-    hold = 3
-    n_frames = len(trace.centroid_history) + hold
+    n_steps = len(trace.centroid_history)
+    n_frames = n_steps + hold
 
     def frame(i: int):
-        step = min(i, len(trace.centroid_history) - 1)
+        step = min(i, n_steps - 1)
         centroids = trace.centroid_history[step]
         labels    = trace.labels_history[step]
         inertia   = trace.inertia_history[step]
 
         scatter.set_color([colors[c] for c in labels])
         centroid_dots.set_offsets(centroids)
-        centroid_dots.set_color(colors[:k])
 
         for c in range(k):
             xs = [trace.centroid_history[s][c, 0] for s in range(step + 1)]
             ys = [trace.centroid_history[s][c, 1] for s in range(step + 1)]
             trail_lines[c].set_data(xs, ys)
 
-        # Update the inset line to show progress up to the current step.
         inset_line.set_data(all_iters[: step + 1], trace.inertia_history[: step + 1])
+        inset_head.set_data([all_iters[step]], [trace.inertia_history[step]])
 
-        status = "converged" if step == trace.iterations_run else f"iter {step}"
-        ax.set_title(f"{base_title}\n{status} · inertia = {inertia:,.1f}",
-                     fontsize=11)
-        return [scatter, centroid_dots, *trail_lines, inset_line]
+        status = "converged" if step == trace.iterations_run else f"iteration {step}"
+        ax.set_title(f"{base_title}\n{status}  ·  inertia = {inertia:,.1f}",
+                     fontsize=13, color=INK)
+        return [scatter, centroid_dots, *trail_lines, inset_line, inset_head]
 
     anim = FuncAnimation(fig, frame, frames=n_frames, interval=1000 / fps,
                          blit=False, repeat=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    anim.save(out_path, writer=PillowWriter(fps=fps))
+    anim.save(out_path, writer=PillowWriter(fps=fps), dpi=DPI,
+              savefig_kwargs={"facecolor": PAPER})
     plt.close(fig)
     print(f"Saved {out_path}")
 
@@ -181,7 +223,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     X_easy, _ = make_blobs(n_samples=400, n_features=2, centers=4,
                            cluster_std=0.8, random_state=42)
 
-    trace_rand = run_lloyds(X_easy, k=4, init="random",     seed=2,  max_iter=30)
+    # seed=2 (the historical pick) actually strands two centroids in one blob —
+    # it looks identical to the pathological panel and undercuts the strip's
+    # good→bad→fixed contrast. seed=11 converges cleanly to all four blobs in
+    # four iterations (ARI 1.0), which is what the "random init" caption means
+    # by "converging from a random initialization on Gaussian blobs".
+    trace_rand = run_lloyds(X_easy, k=4, init="random",     seed=11, max_iter=30)
     trace_kpp  = run_lloyds(X_easy, k=4, init="k-means++",  seed=42, max_iter=30)
 
     animate(trace_rand, X_easy, k=4,
@@ -191,19 +238,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             out_path=args.output_dir / "convergence_kpp.gif",
             title="Lloyd's K-Means — k-means++ init", fps=args.fps)
 
-    # Pathological seed for random init: known to put two centroids in the
-    # same blob and require many iterations to recover.
+    # Pathological seed for random init on the random_state=10 blobs: this seed
+    # strands two centroids in one blob (blob 2) while a real cluster (blob 1)
+    # goes unseeded, and grinds for nine iterations before settling there —
+    # exactly the failure the algorithms.md caption describes. (The dataset seed
+    # stays fixed; only the init seed selects this trajectory.)
     X_path, _ = make_blobs(n_samples=400, n_features=2, centers=4,
                            cluster_std=0.8, random_state=10)
-    trace_bad = run_lloyds(X_path, k=4, init="random", seed=1, max_iter=30)
+    trace_bad = run_lloyds(X_path, k=4, init="random", seed=5, max_iter=30)
     animate(trace_bad, X_path, k=4,
             out_path=args.output_dir / "convergence_pathological.gif",
             title="random init — pathological seed", fps=args.fps)
 
     # make_moons: two interleaved crescent shapes — k-means bisects them
     # incorrectly because they aren't convex.  k=2 since there are two moons.
-    # 250 samples keeps the GIF under 250 KB while still showing the failure.
-    X_moons, _ = make_moons(n_samples=250, noise=0.10, random_state=42)
+    X_moons, _ = make_moons(n_samples=300, noise=0.10, random_state=42)
     trace_moons = run_lloyds(X_moons, k=2, init="random", seed=7, max_iter=15)
     animate(trace_moons, X_moons, k=2,
             out_path=args.output_dir / "convergence_moons.gif",
@@ -211,7 +260,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     # make_circles: two concentric rings — k-means pie-slices them instead of
     # separating inner from outer, a classic non-convex failure mode.
-    X_circles, _ = make_circles(n_samples=200, noise=0.06, factor=0.5, random_state=42)
+    X_circles, _ = make_circles(n_samples=260, noise=0.06, factor=0.5, random_state=42)
     trace_circles = run_lloyds(X_circles, k=2, init="random", seed=7, max_iter=15)
     animate(trace_circles, X_circles, k=2,
             out_path=args.output_dir / "convergence_circles.gif",

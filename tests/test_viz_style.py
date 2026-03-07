@@ -53,18 +53,21 @@ def test_dashboard_runtime_and_memory_use_symbols_and_log2_axes():
     throughput_fig = build_dashboard._throughput_chart(df)
     memory_fig = build_dashboard._memory_chart(df)
 
+    # Tufte redesign: log axes kept, but ticks are plain magnitudes (1k, 1M)
+    # rather than 2^n exponents, and the canvas is paper off-white.
     assert runtime_fig.layout.yaxis.type == "log"
-    assert "log2" in runtime_fig.layout.yaxis.title.text
-    assert all(str(text).startswith("2^") for text in runtime_fig.layout.yaxis.ticktext)
-    assert runtime_fig.layout.plot_bgcolor == "white"
+    assert not any(str(text).startswith("2^") for text in runtime_fig.layout.yaxis.ticktext)
+    assert runtime_fig.layout.plot_bgcolor == "#fffff8"
     assert memory_fig.layout.yaxis.type == "log"
-    assert "log2" in memory_fig.layout.yaxis.title.text
-    assert memory_fig.layout.plot_bgcolor == "white"
+    assert memory_fig.layout.plot_bgcolor == "#fffff8"
 
     for trace in runtime_fig.data:
         impl = build_dashboard._implementation_from_display(trace.name)
         assert trace.mode == "lines+markers"
         assert trace.marker.symbol == IMPL_SYMBOLS_PLOTLY[impl]
+        # Rust-Parallel is the only dashed implementation line.
+        expected_dash = "dash" if impl == "rust_parallel" else "solid"
+        assert trace.line.dash == expected_dash
 
     for trace in throughput_fig.data:
         assert trace.mode == "lines+markers"
@@ -80,7 +83,7 @@ def test_parallel_scaling_plot_uses_shared_rust_styles_and_log2_runtime(tmp_path
     from viz_style import color, mpl_marker
 
     csv_path = tmp_path / "parallel_scaling.csv"
-    out_path = tmp_path / "parallel_scaling.png"
+    out_path = tmp_path / "parallel_scaling.svg"
     pd.DataFrame(
         [
             {"threads": 0, "median_s": 8.0, "min_s": 7.8, "max_s": 8.2},

@@ -21,10 +21,15 @@ from pathlib import Path
 
 from src.viz_style import (
     IMPL_HATCHES_MPL,
+    INK_FAINT,
+    apply_mpl_style,
     color,
     display_name,
+    mpl_linestyle,
     mpl_marker,
     ordered_implementations,
+    si_log_axis,
+    style_axes,
 )
 
 pd.options.mode.copy_on_write = True
@@ -937,21 +942,26 @@ class BenchmarkRunner:
         # Generate visualization plots
         self.generate_plots(results_df)
         
-    def generate_plots(self, results_df: pd.DataFrame):
-        """Generate comparison plots for benchmark results"""
+    def generate_plots(self, results_df: pd.DataFrame, plot_path: Optional[Path] = None):
+        """Generate comparison plots for benchmark results.
+
+        Pass ``plot_path`` to write to a fixed filename (used when regenerating
+        the canonical figure for the site); otherwise a timestamped name is used.
+        """
         try:
             import matplotlib.pyplot as plt
 
+            apply_mpl_style()
             results_df = self.add_derived_metrics(results_df)
             impl_order = ordered_implementations(results_df['implementation'].unique())
 
             fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-            fig.suptitle('K-Means implementation comparison', fontsize=15, fontweight='bold')
+            fig.suptitle('K-means implementation comparison', fontsize=13)
             subtitle = (
                 f"{len(results_df)} rows · end-to-end CLI k-sweep · "
                 "nominal work = n_samples x n_features x sum(k)"
             )
-            fig.text(0.5, 0.965, subtitle, ha='center', va='top', fontsize=9, color='#666666')
+            fig.text(0.5, 0.96, subtitle, ha='center', va='top', fontsize=9, color=INK_FAINT)
 
             def plot_metric(ax, y_col: str, ylabel: str, title: str) -> None:
                 default_offsets = {
@@ -997,12 +1007,14 @@ class BenchmarkRunner:
                         marker=mpl_marker(impl),
                         markersize=5,
                         lw=1.8,
+                        ls=mpl_linestyle(impl),
                         color=color(impl),
-                        alpha=0.85,
+                        alpha=0.9,
                         label=display_name(impl),
                     )
                     last_x, last_y = grp.index[-1], grp.values[-1]
                     label_offset = label_offsets.get(impl, (6, 0))
+                    # Direct line-end label instead of a legend box.
                     ax.annotate(
                         display_name(impl),
                         xy=(last_x, last_y),
@@ -1011,22 +1023,22 @@ class BenchmarkRunner:
                         va='center',
                         fontsize=8,
                         color=color(impl),
-                        bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.72),
                         clip_on=False,
                     )
                 ax.set_xscale('log', base=2)
                 ax.set_yscale('log', base=2)
-                ax.set_xlabel('Nominal k-sweep work (log2)')
+                si_log_axis(ax, 'both')
+                ax.set_xlabel('Nominal k-sweep work')
                 ax.set_ylabel(ylabel)
                 ax.set_title(title, fontsize=11)
-                ax.grid(True, which='major', ls=':', alpha=0.35)
+                style_axes(ax)
                 ax.margins(x=0.18)
 
             ax = axes[0, 0]
             plot_metric(
                 ax,
                 'wall_time_s',
-                'Runtime (s, log2)',
+                'Runtime (s)',
                 'Runtime vs matched workload',
             )
 
@@ -1034,7 +1046,7 @@ class BenchmarkRunner:
             plot_metric(
                 ax,
                 'work_units_per_second',
-                'Nominal work units / s (log2)',
+                'Nominal work units / s',
                 'Throughput vs matched workload',
             )
 
@@ -1042,7 +1054,7 @@ class BenchmarkRunner:
             plot_metric(
                 ax,
                 'peak_rss_mb',
-                'Sampled RSS (MB, log2)',
+                'Sampled RSS (MB)',
                 'Memory vs matched workload',
             )
 
@@ -1077,11 +1089,12 @@ class BenchmarkRunner:
                         label=display_name(impl),
                     )
                 ax.set_xscale('log', base=2)
+                si_log_axis(ax, 'x')
                 ax.set_ylim(0, 1)
                 ax.set_title('Quality vs runtime frontier', fontsize=11)
-                ax.set_xlabel('Runtime (s, log2)')
+                ax.set_xlabel('Runtime (s)')
                 ax.set_ylabel(quality_label)
-                ax.grid(True, which='major', ls=':', alpha=0.35)
+                style_axes(ax)
                 ax.margins(x=0.08)
                 ax.legend(fontsize=8, loc='lower right', frameon=False)
             else:
@@ -1090,9 +1103,12 @@ class BenchmarkRunner:
 
             plt.tight_layout(rect=(0, 0, 1, 0.94))
 
-            # Save plot
-            plot_file = self.results_dir / f"benchmark_plots_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+            # Save plot (fixed name when regenerating the canonical figure).
+            if plot_path is None:
+                plot_file = self.results_dir / f"benchmark_plots_{datetime.now().strftime('%Y%m%d_%H%M%S')}.svg"
+            else:
+                plot_file = Path(plot_path)
+            plt.savefig(plot_file, bbox_inches='tight')
             plt.close()
 
             print(f"Plots saved to: {plot_file}")

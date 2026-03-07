@@ -23,27 +23,39 @@ try:
     from viz_style import (
         DISPLAY_NAMES,
         IMPL_COLORS,
+        INK,
+        INK_FAINT,
+        PAPER,
+        PLOTLY_FONT_FAMILY,
+        RULE,
         color,
         display_name,
         implementation_from_display,
-        log2_tick_text,
         log2_tick_values,
         ordered_implementations,
+        plotly_dash,
         plotly_pattern,
         plotly_symbol,
+        si_labels,
     )
 except ImportError:
     from src.viz_style import (
         DISPLAY_NAMES,
         IMPL_COLORS,
+        INK,
+        INK_FAINT,
+        PAPER,
+        PLOTLY_FONT_FAMILY,
+        RULE,
         color,
         display_name,
         implementation_from_display,
-        log2_tick_text,
         log2_tick_values,
         ordered_implementations,
+        plotly_dash,
         plotly_pattern,
         plotly_symbol,
+        si_labels,
     )
 
 
@@ -111,17 +123,45 @@ def _trend_by_workload(df: pd.DataFrame, metric: str) -> pd.DataFrame:
 
 
 def _apply_tufte_plotly_style(fig: go.Figure) -> go.Figure:
-    """Quiet Plotly defaults so data marks carry the visual weight."""
+    """Quiet Plotly defaults so data marks carry the visual weight.
+
+    Paper off-white background, serif (Newsreader/Georgia) type, hairline
+    left+bottom axes only, and an ultra-light y-grid — matching the matplotlib
+    figure family.
+    """
     fig.update_layout(
         template="plotly_white",
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font=dict(family="Inter, system-ui, sans-serif", color="#222222"),
-        hoverlabel=dict(bgcolor="white", bordercolor="#cccccc", font_size=12),
-        legend=dict(bgcolor="rgba(255,255,255,0)", borderwidth=0),
-        margin=dict(l=72, r=36, t=72, b=64),
+        paper_bgcolor=PAPER,
+        plot_bgcolor=PAPER,
+        font=dict(family=PLOTLY_FONT_FAMILY, color=INK, size=14),
+        title=dict(font=dict(size=16, color=INK)),
+        hoverlabel=dict(
+            bgcolor=PAPER,
+            bordercolor=RULE,
+            font=dict(family=PLOTLY_FONT_FAMILY, size=12, color=INK),
+        ),
+        legend=dict(
+            bgcolor="rgba(255,255,255,0)",
+            borderwidth=0,
+            font=dict(family=PLOTLY_FONT_FAMILY, size=12),
+        ),
+        margin=dict(l=72, r=120, t=72, b=64),
     )
-    axis_style = dict(
+    # x-axis: hairline baseline, no vertical grid.
+    fig.update_xaxes(
+        showline=True,
+        linecolor="#999999",
+        linewidth=1,
+        mirror=False,
+        showgrid=False,
+        zeroline=False,
+        ticks="outside",
+        tickcolor="#bbbbbb",
+        ticklen=4,
+        tickfont=dict(color=INK_FAINT),
+    )
+    # y-axis: hairline spine, ultra-light dashed grid behind the data.
+    fig.update_yaxes(
         showline=True,
         linecolor="#999999",
         linewidth=1,
@@ -129,13 +169,13 @@ def _apply_tufte_plotly_style(fig: go.Figure) -> go.Figure:
         showgrid=True,
         gridcolor="#eeeeee",
         gridwidth=1,
+        griddash="dot",
         zeroline=False,
         ticks="outside",
         tickcolor="#bbbbbb",
         ticklen=4,
+        tickfont=dict(color=INK_FAINT),
     )
-    fig.update_xaxes(**axis_style)
-    fig.update_yaxes(**axis_style)
     return fig
 
 
@@ -156,7 +196,7 @@ def _runtime_chart(df: pd.DataFrame) -> go.Figure:
                 y=grp["value"],
                 mode="lines+markers",
                 name=display,
-                line=dict(color=_color(impl), width=2),
+                line=dict(color=_color(impl), width=2, dash=plotly_dash(impl)),
                 marker=dict(color=_color(impl), symbol=plotly_symbol(impl), size=9),
                 customdata=grp[["workload_shapes"]].values,
                 hovertemplate=(
@@ -172,16 +212,16 @@ def _runtime_chart(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         title="CLI k-sweep runtime vs nominal workload",
         xaxis=dict(
-            title="n_samples x n_features x sum(k=1..k_max) (log2 ticks)",
+            title="n_samples x n_features x sum(k=1..k_max)",
             type="log",
             tickvals=work_ticks,
-            ticktext=log2_tick_text(work_ticks),
+            ticktext=si_labels(work_ticks),
         ),
         yaxis=dict(
-            title="Runtime (s, log2 scale, including CSV read/write)",
+            title="Runtime (s, including CSV read/write)",
             type="log",
             tickvals=runtime_ticks,
-            ticktext=log2_tick_text(runtime_ticks),
+            ticktext=si_labels(runtime_ticks),
         ),
         legend_title="Implementation",
     )
@@ -204,7 +244,7 @@ def _throughput_chart(df: pd.DataFrame) -> go.Figure:
                 y=grp["value"],
                 mode="lines+markers",
                 name=display,
-                line=dict(color=_color(impl), width=2),
+                line=dict(color=_color(impl), width=2, dash=plotly_dash(impl)),
                 marker=dict(color=_color(impl), symbol=plotly_symbol(impl), size=9),
                 customdata=grp[["workload_shapes"]].values,
                 hovertemplate=(
@@ -220,16 +260,16 @@ def _throughput_chart(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         title="Nominal k-sweep throughput",
         xaxis=dict(
-            title="n_samples x n_features x sum(k=1..k_max) (log2 ticks)",
+            title="n_samples x n_features x sum(k=1..k_max)",
             type="log",
             tickvals=work_ticks,
-            ticktext=log2_tick_text(work_ticks),
+            ticktext=si_labels(work_ticks),
         ),
         yaxis=dict(
-            title="Nominal work units / s (log2 scale)",
+            title="Nominal work units / s",
             type="log",
             tickvals=throughput_ticks,
-            ticktext=log2_tick_text(throughput_ticks),
+            ticktext=si_labels(throughput_ticks),
         ),
         legend_title="Implementation",
     )
@@ -252,7 +292,7 @@ def _memory_chart(df: pd.DataFrame) -> go.Figure:
                 y=grp["value"],
                 mode="lines+markers",
                 name=display,
-                line=dict(color=_color(impl), width=2),
+                line=dict(color=_color(impl), width=2, dash=plotly_dash(impl)),
                 marker=dict(color=_color(impl), symbol=plotly_symbol(impl), size=9),
                 customdata=grp[["workload_shapes"]].values,
                 hovertemplate=(
@@ -268,16 +308,16 @@ def _memory_chart(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         title="Memory footprint vs nominal workload",
         xaxis=dict(
-            title="n_samples x n_features x sum(k=1..k_max) (log2 ticks)",
+            title="n_samples x n_features x sum(k=1..k_max)",
             type="log",
             tickvals=work_ticks,
-            ticktext=log2_tick_text(work_ticks),
+            ticktext=si_labels(work_ticks),
         ),
         yaxis=dict(
-            title="Sampled RSS MB (log2 scale)",
+            title="Sampled RSS (MB)",
             type="log",
             tickvals=memory_ticks,
-            ticktext=log2_tick_text(memory_ticks),
+            ticktext=si_labels(memory_ticks),
         ),
         legend_title="Implementation",
     )
@@ -316,7 +356,7 @@ def _internal_quality_chart(df: pd.DataFrame) -> go.Figure:
             )
         )
     fig.update_layout(
-        title="Internal Quality Metrics (mean over all runs)",
+        title="Internal quality metrics (mean over all runs)",
         barmode="group",
         yaxis_title="Score",
         legend_title="Implementation",
@@ -361,7 +401,7 @@ def _external_quality_chart(df: pd.DataFrame) -> go.Figure | None:
             )
         )
     fig.update_layout(
-        title="External Quality Metrics — ARI & NMI (mean over all runs)",
+        title="External quality metrics — ARI and NMI (mean over all runs)",
         barmode="group",
         yaxis=dict(title="Score", range=[0, 1.05]),
         legend_title="Implementation",
@@ -421,10 +461,10 @@ def _quality_frontier_chart(df: pd.DataFrame) -> go.Figure | None:
     fig.update_layout(
         title="Quality vs runtime frontier",
         xaxis=dict(
-            title="Median runtime (s, log2 scale)",
+            title="Median runtime (s)",
             type="log",
             tickvals=runtime_ticks,
-            ticktext=log2_tick_text(runtime_ticks),
+            ticktext=si_labels(runtime_ticks),
         ),
         yaxis=dict(title=metric_label, range=y_range),
         legend_title="Implementation",
@@ -507,7 +547,13 @@ def _resource_table(df: pd.DataFrame) -> str:
 # ── HTML assembly ─────────────────────────────────────────────────────────────
 
 def _fig_div(fig: go.Figure) -> str:
-    return pio.to_html(fig, include_plotlyjs=False, full_html=False)
+    return pio.to_html(
+        fig,
+        include_plotlyjs=False,
+        full_html=False,
+        config={"responsive": True},
+        default_height="520px",
+    )
 
 
 def _build_html(
@@ -542,41 +588,58 @@ def _build_html(
           <meta name="viewport" content="width=device-width,initial-scale=1"/>
           <title>K-Means Benchmark Dashboard</title>
           <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"/>
+          <link rel="preconnect" href="https://fonts.googleapis.com"/>
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+          <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet"/>
           <style>
-            body {{font-family:system-ui,sans-serif;margin:0;padding:0 1rem 2rem;background:#fafafa;color:#222;}}
-            h1 {{font-size:1.6rem;margin-bottom:.25rem;}}
-            .subtitle {{color:#555;margin-bottom:1.5rem;}}
+            body {{
+              font-family:Newsreader,Georgia,'Times New Roman',serif;
+              margin:0 auto;padding:1.5rem 1rem 2rem;max-width:960px;
+              background:#fffff8;color:#151515;
+              line-height:1.5;
+            }}
+            h1 {{font-size:1.6rem;font-weight:600;margin-bottom:.25rem;}}
+            .subtitle {{color:#595959;margin-bottom:1.5rem;max-width:64ch;}}
+            /* Embedded in the benchmarks page: the page supplies heading and
+               context, so drop the duplicate chrome and let the tabs blend in. */
+            .embedded body {{padding:0;max-width:none;}}
+            .embedded h1, .embedded .subtitle, .embedded footer {{display:none;}}
             /* Tab radio inputs are hidden — only labels are visible */
             .tabs input[type=radio] {{display:none;}}
             .tabs {{margin-bottom:1rem;}}
-            .tab-labels {{display:flex;gap:.5rem;flex-wrap:wrap;border-bottom:2px solid #ddd;padding-bottom:.5rem;}}
+            .tab-labels {{display:flex;gap:.5rem;flex-wrap:wrap;border-bottom:1px solid #dcdcd4;padding-bottom:.5rem;}}
             .tab-labels label {{
               padding:.45rem 1rem;cursor:pointer;border-radius:4px 4px 0 0;
-              background:#e8e8e8;border:1px solid #ccc;border-bottom:none;
-              font-size:.9rem;user-select:none;
+              background:transparent;border:1px solid transparent;border-bottom:none;
+              font-size:.95rem;font-style:italic;color:#595959;user-select:none;
             }}
-            .tab-labels label:hover {{background:#d0d8e8;}}
+            .tab-labels label:hover {{color:#151515;}}
             .tab-content {{display:none;padding:.5rem 0;}}
             #tab1:checked ~ .tab-labels label[for=tab1],
             #tab2:checked ~ .tab-labels label[for=tab2],
             #tab3:checked ~ .tab-labels label[for=tab3],
             #tab4:checked ~ .tab-labels label[for=tab4],
             #tab5:checked ~ .tab-labels label[for=tab5]
-            {{background:#fff;border-bottom:2px solid #fff;margin-bottom:-2px;font-weight:600;}}
+            {{color:#151515;font-style:normal;border-bottom:2px solid #a32015;margin-bottom:-1px;}}
             #tab1:checked ~ .tab-contents #content1,
             #tab2:checked ~ .tab-contents #content2,
             #tab3:checked ~ .tab-contents #content3,
             #tab4:checked ~ .tab-contents #content4,
             #tab5:checked ~ .tab-contents #content5 {{display:block;}}
             .resource-table-wrap {{overflow-x:auto;margin:1rem 0;}}
-            .resource-table {{border-collapse:collapse;min-width:860px;background:#fff;}}
+            .resource-table {{border-collapse:collapse;min-width:860px;background:transparent;}}
             .resource-table th,.resource-table td {{
-              border-bottom:1px solid #e5e5e5;padding:.45rem .6rem;text-align:right;
+              border:none;padding:.45rem .6rem;text-align:right;
               font-variant-numeric:tabular-nums;
             }}
             .resource-table th:first-child,.resource-table td:first-child {{text-align:left;}}
-            .resource-table thead th {{color:#555;font-weight:600;border-bottom:1px solid #bbb;}}
-            footer {{margin-top:3rem;font-size:.8rem;color:#888;border-top:1px solid #ddd;padding-top:.75rem;}}
+            .resource-table thead th {{
+              color:#595959;font-weight:600;font-style:italic;
+              border-bottom:1px solid #151515;
+            }}
+            .resource-table tbody tr:last-child td,
+            .resource-table tbody tr:last-child th {{border-bottom:1px solid #151515;}}
+            footer {{margin-top:3rem;font-size:.85rem;font-style:italic;color:#595959;border-top:1px solid #dcdcd4;padding-top:.75rem;}}
           </style>
           <script>{plotly_js}</script>
         </head>
@@ -610,7 +673,26 @@ def _build_html(
             </div>
           </div>
 
-          <footer>Source CSV: {source_csv_name}</footer>
+          <!-- source CSV: {source_csv_name} -->
+          <script>
+            if (window.self !== window.top) {{
+              document.documentElement.classList.add("embedded");
+            }}
+            // Plotly divs are built with responsive:true, but a chart laid out
+            // while its tab is display:none picks up a stale/default width and
+            // only re-measures on a window resize. When any tab is selected,
+            // wait one frame so the container is visible, then nudge Plotly to
+            // re-measure by dispatching a resize event.
+            document.querySelectorAll('.tabs input[type=radio]').forEach(function (radio) {{
+              radio.addEventListener('change', function () {{
+                requestAnimationFrame(function () {{
+                  setTimeout(function () {{
+                    window.dispatchEvent(new Event('resize'));
+                  }}, 50);
+                }});
+              }});
+            }});
+          </script>
         </body>
         </html>
     """)

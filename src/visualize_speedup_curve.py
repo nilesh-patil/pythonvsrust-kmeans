@@ -9,12 +9,34 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 try:
-    from viz_style import color, display_name, mpl_marker, ordered_implementations
+    from viz_style import (
+        INK_FAINT,
+        apply_mpl_style,
+        color,
+        display_name,
+        end_label,
+        mpl_linestyle,
+        mpl_marker,
+        ordered_implementations,
+        si_log_axis,
+        style_axes,
+    )
 except ImportError:
-    from src.viz_style import color, display_name, mpl_marker, ordered_implementations
+    from src.viz_style import (
+        INK_FAINT,
+        apply_mpl_style,
+        color,
+        display_name,
+        end_label,
+        mpl_linestyle,
+        mpl_marker,
+        ordered_implementations,
+        si_log_axis,
+        style_axes,
+    )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OUT_PATH = REPO_ROOT / "results" / "speedup_curve.png"
+OUT_PATH = REPO_ROOT / "results" / "speedup_curve.svg"
 
 
 def latest_csv_with_columns(results_dir: Path, required_columns: set[str]) -> Path:
@@ -70,44 +92,62 @@ def main() -> None:
             speedups[str(impl)] = python_baseline / pivot[impl]
 
     # --- Plot -----------------------------------------------------------
+    apply_mpl_style()
     fig, ax = plt.subplots(figsize=(9, 5.5))
 
+    # Nudge overlapping end-labels apart (Rust and Rust-Parallel converge).
+    label_dy = {"rust": -6, "rust_parallel": 8, "sklearn": 0}
     for impl, series in speedups.items():
         ax.plot(
             series.index,
             series.values,
             marker=mpl_marker(impl),
-            markersize=6,
-            lw=2,
+            markersize=5,
+            lw=1.8,
+            ls=mpl_linestyle(impl),
             color=color(impl),
-            label=display_name(impl),
+        )
+        # Direct line-end label instead of a legend box.
+        end_label(
+            ax,
+            series.index[-1],
+            series.values[-1],
+            display_name(impl),
+            color(impl),
+            dy=label_dy.get(impl, 0),
         )
 
     # Reference line: y = 1 means "same speed as Python".
-    ax.axhline(1.0, ls="--", lw=1.2, color="#888888", alpha=0.8, label="Python baseline (1×)")
+    ax.axhline(1.0, ls=(0, (2, 2)), lw=1.0, color=INK_FAINT, alpha=0.7)
+    ax.text(
+        0.015, 1.0, "Python baseline (1×)",
+        transform=ax.get_yaxis_transform(),
+        va="bottom", ha="left", fontsize=8, color=INK_FAINT,
+    )
 
     ax.set_xscale("log", base=2)
     ax.set_yscale("log", base=2)
-    ax.set_xlabel("Nominal k-sweep work: n_samples x n_features x sum(k)  (log2)", fontsize=11)
-    ax.set_ylabel("Speedup over pure-Python  (log2 scale, higher is better)", fontsize=11)
+    si_log_axis(ax, "both")
+    ax.set_xlabel("Nominal k-sweep work (n_samples x n_features x sum k)")
+    ax.set_ylabel("Speedup over pure Python (higher is better)")
     subtitle = (
         f"Source: {csv_path.name} ({len(df)} rows) · "
         "end-to-end CLI k-sweep runtime · three paired repeats per workload"
     )
-    fig.suptitle("Speedup over pure-Python by matched workload", fontsize=13, fontweight="bold", y=0.99)
+    fig.suptitle("Speedup over pure Python by matched workload", fontsize=11, y=0.98)
     fig.text(
-        0.5, 0.935,
+        0.5, 0.925,
         subtitle,
         ha="center", va="bottom",
-        fontsize=8, color="#666666",
+        fontsize=8, color=INK_FAINT,
     )
 
-    ax.grid(True, which="both", ls=":", alpha=0.5)
-    ax.legend(fontsize=9)
+    style_axes(ax)
+    ax.margins(x=0.12)
     fig.tight_layout(rect=(0, 0, 1, 0.90))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")
+    fig.savefig(OUT_PATH, bbox_inches="tight")
     print(f"Saved {OUT_PATH}  ({OUT_PATH.stat().st_size // 1024} KB)")
 
 

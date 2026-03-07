@@ -11,21 +11,35 @@ import pandas as pd
 
 try:
     from viz_style import (
+        INK_FAINT,
+        PAPER,
+        apply_mpl_style,
         color,
         display_name,
+        end_label,
+        mpl_linestyle,
         mpl_marker,
         ordered_implementations,
+        si_log_axis,
+        style_axes,
     )
 except ImportError:
     from src.viz_style import (
+        INK_FAINT,
+        PAPER,
+        apply_mpl_style,
         color,
         display_name,
+        end_label,
+        mpl_linestyle,
         mpl_marker,
         ordered_implementations,
+        si_log_axis,
+        style_axes,
     )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OUT_PATH = REPO_ROOT / "results" / "memory_breakdown.png"
+OUT_PATH = REPO_ROOT / "results" / "memory_breakdown.svg"
 
 
 def latest_csv_with_columns(results_dir: Path, required_columns: set[str]) -> Path:
@@ -80,6 +94,7 @@ def main() -> None:
         .sort_index()
     )
 
+    apply_mpl_style()
     fig, (ax_dot, ax_line) = plt.subplots(1, 2, figsize=(12, 5.5))
 
     # ---- Left: dot chart ------------------------------------------------
@@ -92,10 +107,9 @@ def main() -> None:
             s=90,
             marker=mpl_marker(impl),
             color=color(impl),
-            edgecolor="white",
+            edgecolor=PAPER,
             linewidth=0.8,
             zorder=3,
-            label=display_name(impl),
         )
         ax_dot.text(
             idx,
@@ -104,15 +118,18 @@ def main() -> None:
             ha="center",
             va="bottom",
             fontsize=9,
-            fontweight="bold",
+            color=color(impl),
         )
 
     ax_dot.set_xticks(x)
-    ax_dot.set_xticklabels([display_name(i) for i in impls], fontsize=10)
+    ax_dot.set_xticklabels([display_name(i) for i in impls], fontsize=9)
     ax_dot.set_yscale("log", base=2)
-    ax_dot.set_ylabel("Sampled RSS  (MB / 1k samples, log2)", fontsize=10)
-    ax_dot.set_title("RSS per 1 000 samples at largest matched workload\n(lower is better)", fontsize=11)
-    ax_dot.grid(axis="y", ls=":", alpha=0.5, zorder=0)
+    # Headroom so the topmost "x.xx MB" label clears the panel title.
+    ax_dot.set_ylim(top=float(dot_data.max()) * 1.9)
+    si_log_axis(ax_dot, "y")
+    ax_dot.set_ylabel("Sampled RSS (MB / 1k samples)")
+    ax_dot.set_title("RSS per 1k samples at largest matched workload (lower is better)")
+    style_axes(ax_dot)
 
     # ---- Right: log-log line chart --------------------------------------
     for impl in impl_order:
@@ -124,28 +141,31 @@ def main() -> None:
             series.values,
             marker=mpl_marker(impl),
             markersize=5,
-            lw=2,
+            lw=1.8,
+            ls=mpl_linestyle(impl),
             color=color(impl),
-            label=display_name(impl),
         )
+        # Direct line-end labels instead of a legend box.
+        end_label(ax_line, series.index[-1], series.values[-1], display_name(impl), color(impl))
 
     ax_line.set_xscale("log", base=2)
     ax_line.set_yscale("log", base=2)
-    ax_line.set_xlabel("Nominal k-sweep work  (log2)", fontsize=10)
-    ax_line.set_ylabel("Sampled RSS  (MB, median, log2)", fontsize=10)
-    ax_line.set_title("Sampled RSS vs matched workload\n(log-log)", fontsize=11)
-    ax_line.grid(True, which="both", ls=":", alpha=0.5)
-    ax_line.legend(fontsize=9)
+    si_log_axis(ax_line, "both")
+    ax_line.set_xlabel("Nominal k-sweep work")
+    ax_line.set_ylabel("Sampled RSS (MB, median)")
+    ax_line.set_title("Sampled RSS vs matched workload")
+    ax_line.margins(x=0.18)
+    style_axes(ax_line)
 
     # ---- Shared title + subtitle ----------------------------------------
-    fig.suptitle("Memory footprint and scaling", fontsize=14, fontweight="bold", y=0.99)
+    fig.suptitle("Memory footprint and scaling", fontsize=12, y=0.99)
     subtitle = f"Source: {csv_path.name}  ·  {len(df)} rows  ·  process RSS sampled every 10 ms"
-    fig.text(0.5, 0.91, subtitle, ha="center", va="bottom", fontsize=8, color="#666666")
+    fig.text(0.5, 0.91, subtitle, ha="center", va="bottom", fontsize=8, color=INK_FAINT)
 
-    fig.tight_layout(rect=(0, 0, 1, 0.84))
+    fig.tight_layout(rect=(0, 0, 1, 0.9))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")
+    fig.savefig(OUT_PATH, bbox_inches="tight")
     print(f"Saved {OUT_PATH}  ({OUT_PATH.stat().st_size // 1024} KB)")
 
 

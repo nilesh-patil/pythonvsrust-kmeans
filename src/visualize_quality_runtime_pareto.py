@@ -15,12 +15,32 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 try:
-    from viz_style import color, display_name, mpl_marker, ordered_implementations
+    from viz_style import (
+        INK_FAINT,
+        PAPER,
+        apply_mpl_style,
+        color,
+        display_name,
+        mpl_marker,
+        ordered_implementations,
+        si_log_axis,
+        style_axes,
+    )
 except ImportError:
-    from src.viz_style import color, display_name, mpl_marker, ordered_implementations
+    from src.viz_style import (
+        INK_FAINT,
+        PAPER,
+        apply_mpl_style,
+        color,
+        display_name,
+        mpl_marker,
+        ordered_implementations,
+        si_log_axis,
+        style_axes,
+    )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OUT_PATH = REPO_ROOT / "results" / "quality_runtime_pareto.png"
+OUT_PATH = REPO_ROOT / "results" / "quality_runtime_pareto.svg"
 
 def latest_csv_with_columns(results_dir: Path, required_columns: set[str]) -> Path:
     """Return newest benchmark CSV containing every required column."""
@@ -74,6 +94,7 @@ def main() -> None:
         .reset_index()
     )
 
+    apply_mpl_style()
     fig, ax = plt.subplots(figsize=(10, 6.4))
 
     for impl in ordered_implementations(agg["implementation"].unique()):
@@ -86,14 +107,14 @@ def main() -> None:
             marker=mpl_marker(str(impl)),
             color=impl_color,
             alpha=0.75,
-            edgecolors="white",
+            edgecolors=PAPER,
             linewidths=0.6,
             label=display_name(str(impl)),
             zorder=3,
         )
 
     annotation_offsets = {
-        "python": (10, 0, "left", "center"),
+        "python": (-14, -16, "right", "top"),
         "rust": (-12, -12, "right", "top"),
         "rust_parallel": (12, -12, "left", "top"),
         "sklearn": (-10, -14, "right", "top"),
@@ -110,61 +131,37 @@ def main() -> None:
             textcoords="offset points",
             ha=ha,
             va=va,
-            fontsize=8,
-            fontweight="bold",
+            fontsize=9,
             color=impl_color,
             arrowprops=dict(arrowstyle="-", color=impl_color, lw=0.8, alpha=0.5),
         )
 
     ax.set_xscale("log", base=2)
-    ax.set_xlabel("Median runtime  (s, log2 scale, lower is better)", fontsize=11)
-    ax.set_ylabel("Median Adjusted Rand Index  (higher is better)", fontsize=11)
+    si_log_axis(ax, "x")
+    ax.set_xlabel("Median runtime (s, lower is better)")
+    ax.set_ylabel("Median Adjusted Rand Index (higher is better)")
 
     subtitle = f"{csv_path.name}  ·  {n_runs} rows  ·  medians by matched workload"
     fig.suptitle(
-        "Quality–runtime Pareto (ARI vs runtime)",
+        "Quality vs runtime frontier (ARI vs runtime)",
         x=0.5,
-        y=0.965,
-        fontsize=13,
-        fontweight="bold",
+        y=0.97,
+        fontsize=11,
     )
     fig.text(
-        0.5, 0.915,
+        0.5, 0.925,
         subtitle,
         ha="center",
         va="bottom",
-        fontsize=8, color="#666666",
+        fontsize=8, color=INK_FAINT,
     )
 
-    # Legend for implementations (de-duplicated by matplotlib).
-    handles, labels_leg = ax.get_legend_handles_labels()
-    # Deduplicate while preserving order.
-    seen: dict[str, int] = {}
-    unique_handles, unique_labels = [], []
-    for h, lb in zip(handles, labels_leg):
-        if lb not in seen:
-            unique_handles.append(h)
-            unique_labels.append(lb)
-            seen[lb] = 1
-
-    legend_impl = ax.legend(
-        unique_handles,
-        unique_labels,
-        title="Implementation",
-        fontsize=8,
-        title_fontsize=8,
-        loc="lower right",
-        bbox_to_anchor=(0.985, 0.145),
-        bbox_transform=fig.transFigure,
-        frameon=True,
-    )
-    ax.add_artist(legend_impl)
-
-    ax.grid(True, ls=":", alpha=0.4)
-    fig.tight_layout(rect=(0, 0, 0.82, 0.88))
+    # Direct centroid labels stand in for a legend, so no legend box.
+    style_axes(ax)
+    fig.tight_layout(rect=(0, 0, 1, 0.9))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")
+    fig.savefig(OUT_PATH, bbox_inches="tight")
     print(f"Saved {OUT_PATH}  ({OUT_PATH.stat().st_size // 1024} KB)")
 
 

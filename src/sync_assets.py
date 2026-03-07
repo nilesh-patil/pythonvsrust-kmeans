@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mirror results/*.png and results/animations/*.gif into docs/assets/. Idempotent."""
+"""Mirror results/*.{svg,png} and results/animations/*.gif into docs/assets/. Idempotent."""
 
 from __future__ import annotations
 
@@ -24,10 +24,12 @@ def sync(src_dir: Path, dst_dir: Path, pattern: str) -> int:
 
 
 def main() -> None:
-    n_png  = sync(RESULTS,                DOCS / "assets" / "images",     "*.png")
+    images = DOCS / "assets" / "images"
+    n_svg  = sync(RESULTS,                images,                         "*.svg")
+    n_png  = sync(RESULTS,                images,                         "*.png")
     n_gif  = sync(RESULTS / "animations", DOCS / "assets" / "animations", "*.gif")
     n_dash = sync(RESULTS / "dashboards", DOCS / "dashboard",             "*.html")
-    print(f"synced  {n_png} PNG, {n_gif} GIF, {n_dash} dashboard HTML")
+    print(f"synced  {n_svg} SVG, {n_png} PNG, {n_gif} GIF, {n_dash} dashboard HTML")
 
 
 if __name__ == "__main__":

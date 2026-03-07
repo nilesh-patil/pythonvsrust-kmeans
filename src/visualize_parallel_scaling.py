@@ -12,16 +12,38 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 try:
-    from viz_style import color, display_name, log2_tick_text, log2_tick_values, mpl_marker
+    from viz_style import (
+        INK_FAINT,
+        apply_mpl_style,
+        color,
+        display_name,
+        log2_tick_text,
+        log2_tick_values,
+        mpl_linestyle,
+        mpl_marker,
+        si_label,
+        style_axes,
+    )
 except ImportError:
-    from src.viz_style import color, display_name, log2_tick_text, log2_tick_values, mpl_marker
+    from src.viz_style import (
+        INK_FAINT,
+        apply_mpl_style,
+        color,
+        display_name,
+        log2_tick_text,
+        log2_tick_values,
+        mpl_linestyle,
+        mpl_marker,
+        si_label,
+        style_axes,
+    )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CSV_PATH = REPO_ROOT / "results" / "parallel_scaling.csv"
 CSV_PATH = DEFAULT_CSV_PATH
 SCALE_DIR = REPO_ROOT / "results"
 SCALE_PATTERN = "parallel_scaling_n*.csv"
-OUT_PATH = REPO_ROOT / "results" / "parallel_scaling.png"
+OUT_PATH = REPO_ROOT / "results" / "parallel_scaling.svg"
 
 
 def _sample_size_from_path(path: Path) -> int:
@@ -32,24 +54,21 @@ def _sample_size_from_path(path: Path) -> int:
 
 
 def _style_axes(*axes: plt.Axes) -> None:
-    for ax in axes:
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.grid(True, axis="y", ls=":", color="#d8d3cc", alpha=0.75)
+    style_axes(*axes)
 
 
 def _format_sample_ticks(ax: plt.Axes, samples: pd.Series) -> None:
     ticks = [int(value) for value in sorted(samples.unique())]
     ax.set_xscale("log", base=2)
     ax.set_xticks(ticks)
-    ax.set_xticklabels([f"{value // 1000}k" for value in ticks])
+    ax.set_xticklabels([si_label(value) for value in ticks])
 
 
 def _format_log2_y(ax: plt.Axes, values: pd.Series | list[float]) -> None:
     ticks = log2_tick_values(values)
     ax.set_yscale("log", base=2)
     ax.set_yticks(ticks)
-    ax.set_yticklabels(log2_tick_text(ticks))
+    ax.set_yticklabels([si_label(value) for value in ticks])
 
 
 def _load_scale_sweep(paths: list[Path]) -> pd.DataFrame:
@@ -72,6 +91,7 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
         .sort_values("n_samples")
     )
 
+    apply_mpl_style()
     fig, (ax_t, ax_s, ax_threads) = plt.subplots(1, 3, figsize=(15.5, 4.8))
 
     # Runtime by scale: the main "doubling work" story.
@@ -80,7 +100,8 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
         serial["median_s"],
         marker=mpl_marker("rust"),
         color=color("rust"),
-        lw=2,
+        lw=1.8,
+        ls=mpl_linestyle("rust"),
         label=display_name("rust"),
     )
     ax_t.plot(
@@ -88,7 +109,8 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
         best["median_s"],
         marker=mpl_marker("rust_parallel"),
         color=color("rust_parallel"),
-        lw=2,
+        lw=1.8,
+        ls=mpl_linestyle("rust_parallel"),
         label=f"{display_name('rust_parallel')} best",
     )
     ax_t.fill_between(
@@ -108,7 +130,7 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
         + list(best["max_s"]),
     )
     ax_t.set_xlabel("Samples (doubling sequence)")
-    ax_t.set_ylabel("Wall-clock runtime (s, log2 scale)")
+    ax_t.set_ylabel("Wall-clock runtime (s)")
     ax_t.set_title("Runtime grows with sample scale")
     ax_t.annotate(
         "Serial Rust",
@@ -130,13 +152,14 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
     )
 
     # Best speedup by scale: small gain, shown honestly around the 1x baseline.
-    ax_s.axhline(1.0, ls="--", color="#9ca3af", lw=1.2)
+    ax_s.axhline(1.0, ls=(0, (2, 2)), color=INK_FAINT, lw=1.0, alpha=0.7)
     ax_s.plot(
         best["n_samples"],
         best["speedup"],
         marker=mpl_marker("rust_parallel"),
         color=color("rust_parallel"),
-        lw=2,
+        ls=mpl_linestyle("rust_parallel"),
+        lw=1.8,
     )
     _format_sample_ticks(ax_s, best["n_samples"])
     ax_s.set_ylim(0.95, max(1.35, float(best["speedup"].max()) * 1.05))
@@ -157,10 +180,11 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
 
     # Thread-count resource use on the larger workloads.
     selected_scales = [value for value in (64_000, 128_000, 256_000) if value in set(df["n_samples"])]
+    # Scale categories (not implementations): a muted ink-to-rust ramp.
     scale_styles = {
-        64_000: ("#4b5563", "o"),
-        128_000: ("#2563eb", "s"),
-        256_000: ("#7c3aed", "^"),
+        64_000: ("#9a8f80", "o"),
+        128_000: ("#b7410e", "s"),
+        256_000: ("#7a2e0c", "^"),
     }
     for n_samples in selected_scales:
         subset = parallel[parallel["n_samples"] == n_samples].sort_values("threads")
@@ -183,8 +207,8 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
         )
     if selected_scales:
         max_thread = int(parallel["threads"].max())
-        ax_threads.plot([1, max_thread], [1, max_thread], ls=":", color="#9ca3af", lw=1.1)
-    ax_threads.axhline(1.0, ls="--", color="#9ca3af", lw=1.0)
+        ax_threads.plot([1, max_thread], [1, max_thread], ls=(0, (1, 3)), color=INK_FAINT, lw=1.0, alpha=0.6)
+    ax_threads.axhline(1.0, ls=(0, (2, 2)), color=INK_FAINT, lw=1.0, alpha=0.7)
     ax_threads.set_xlabel("Rayon threads (log2 scale)")
     ax_threads.set_ylabel("Speedup vs serial Rust")
     ax_threads.set_title("Large-scale thread sweep")
@@ -195,18 +219,18 @@ def _plot_scale_sweep(df: pd.DataFrame) -> None:
     ax_threads.set_ylim(0.65, max(1.45, float(parallel["speedup"].max()) * 1.05))
 
     _style_axes(ax_t, ax_s, ax_threads)
-    fig.suptitle("Rust K-Means parallel scaling across sample sizes", y=1.03, fontsize=13)
+    fig.suptitle("Rust k-means parallel scaling across sample sizes", y=1.03, fontsize=12)
     fig.text(
         0.5,
         0.0,
         "Source: results/parallel_scaling_n*.csv · Rust-only k-sweep · n_features=32 · k_max=32",
         ha="center",
         va="bottom",
-        fontsize=9,
-        color="#615e5b",
+        fontsize=8,
+        color=INK_FAINT,
     )
     fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")
+    fig.savefig(OUT_PATH, bbox_inches="tight")
     print(f"Saved {OUT_PATH}")
 
 
@@ -221,6 +245,7 @@ def _plot_single_sweep(df: pd.DataFrame) -> None:
     par_1t = par[par["threads"] == 1]["median_s"].iloc[0]
     par["speedup_vs_parallel1"] = par_1t / par["median_s"]
 
+    apply_mpl_style()
     fig, (ax_t, ax_s, ax_eff) = plt.subplots(1, 3, figsize=(15, 4.6))
 
     # --- Runtime panel
@@ -315,9 +340,9 @@ def _plot_single_sweep(df: pd.DataFrame) -> None:
     ax_s.grid(True, ls=":", alpha=0.6)
     ax_s.legend(fontsize=8)
 
-    fig.suptitle("Rust K-Means parallel scaling (Rayon)", y=1.02, fontsize=13)
+    fig.suptitle("Rust k-means parallel scaling (Rayon)", y=1.02, fontsize=12)
     fig.tight_layout()
-    fig.savefig(OUT_PATH, dpi=150, bbox_inches="tight")
+    fig.savefig(OUT_PATH, bbox_inches="tight")
     print(f"Saved {OUT_PATH}")
 
 

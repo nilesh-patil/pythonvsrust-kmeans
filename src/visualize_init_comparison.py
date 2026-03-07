@@ -15,8 +15,22 @@ from sklearn.datasets import make_blobs
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "python_impl"))
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from kmeans import KMeansClustering  # noqa: E402
+
+from viz_style import (  # noqa: E402
+    GRID,
+    INK_FAINT,
+    apply_mpl_style,
+    si_log_axis,
+    style_axes,
+)
+
+# Init methods are categories, not implementations: ochre = the simple "random"
+# baseline, steel blue = the smarter k-means++ seeding.
+RANDOM_COLOR = "#c98c1f"
+KPP_COLOR = "#3d6b9e"
 
 
 DATASETS = [
@@ -54,6 +68,7 @@ def main() -> None:
         print(f"  random   mean inertia: {np.mean(rand_inertias):,.1f}")
         print(f"  k-means++ mean inertia: {np.mean(kpp_inertias):,.1f}")
 
+    apply_mpl_style()
     fig, ax = plt.subplots(figsize=(8, 5))
     names = [d[0] for d in DATASETS]
     x = np.arange(len(names))
@@ -64,10 +79,19 @@ def main() -> None:
     kpp_means  = [np.mean(results[n]["k-means++"]) for n in names]
     kpp_stds   = [np.std (results[n]["k-means++"]) for n in names]
 
+    err_kw = dict(ecolor=INK_FAINT, elinewidth=0.9, capthick=0.9)
     ax.bar(x - width / 2, rand_means, width, yerr=rand_stds,
-           label="random", color="#d97706", capsize=4)
+           color=RANDOM_COLOR, capsize=3, edgecolor=GRID, linewidth=0.4,
+           error_kw=err_kw)
     ax.bar(x + width / 2, kpp_means,  width, yerr=kpp_stds,
-           label="k-means++", color="#0ea5e9", capsize=4)
+           color=KPP_COLOR, capsize=3, edgecolor=GRID, linewidth=0.4,
+           error_kw=err_kw)
+
+    # Direct labels above the first bar pair, in each series' color.
+    ax.text(x[0] - width / 2, rand_means[0] * (1 + rand_stds[0] / rand_means[0]) * 1.05,
+            "random", ha="center", va="bottom", fontsize=9, color=RANDOM_COLOR)
+    ax.text(x[0] + width / 2, kpp_means[0] * (1 + kpp_stds[0] / kpp_means[0]) * 1.05,
+            "k-means++", ha="center", va="bottom", fontsize=9, color=KPP_COLOR)
 
     # Annotate the ratio (random / k-means++) above each bar pair.
     # On a log scale the "top" of a bar is its mean value; we place the
@@ -78,28 +102,24 @@ def main() -> None:
         ax.annotate(
             f"{ratio:.1f}×",
             xy=(x[i], top),
-            xytext=(x[i], top * 1.25),  # slightly above on the log axis
+            xytext=(x[i], top * 1.4),  # slightly above on the log axis
             ha="center", va="bottom",
-            fontsize=9, fontweight="bold", color="#555",
+            fontsize=9, color=INK_FAINT,
         )
 
     ax.set_xticks(x)
     ax.set_xticklabels([f"{n}\n(n={s:,}, d={d}, k={k})"
                         for (n, s, d, k) in DATASETS])
-    ax.set_ylabel("Mean inertia (log2 scale, lower is better)")
-    ax.set_title(f"K-Means initialization comparison · {N_RUNS} seeds per bar")
+    ax.set_ylabel("Mean inertia (lower is better)")
+    ax.set_title(f"K-means initialization: random vs k-means++ · {N_RUNS} seeds per bar")
     ax.set_yscale("log", base=2)
-    ax.legend()
-    ax.grid(axis="y", linestyle=":", alpha=0.6)
+    si_log_axis(ax, "y")
+    style_axes(ax)
 
-    # Footer note — placed in figure coordinates so it sits below the axes.
-    fig.text(0.5, 0.01, "Lower is better · 10 seeds per bar",
-             ha="center", va="bottom", fontsize=8, color="#888")
-
-    fig.tight_layout(rect=[0, 0.04, 1, 1])
-    out_path = REPO_ROOT / "results" / "init_comparison.png"
+    fig.tight_layout()
+    out_path = REPO_ROOT / "results" / "init_comparison.svg"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path)
     print(f"\nSaved {out_path}")
 
 
