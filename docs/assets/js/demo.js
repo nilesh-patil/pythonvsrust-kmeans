@@ -306,13 +306,16 @@ function parseStepBuffer(buf, n, k, d, xs) {
 // Canvas drawing helpers
 // ---------------------------------------------------------------------------
 
-const PALETTE = ["#0ea5e9","#dc2626","#16a34a","#a855f7","#f59e0b","#0891b2","#db2777","#65a30d"];
+// Muted, print-like categorical palette anchored on the implementation tokens
+// (steel blue, rust, ochre …) — see DESIGN_BRIEF.md.
+const PAPER = "#fffff8";
+const PALETTE = ["#3d6b9e","#b7410e","#c98c1f","#5b7553","#7a2e0c","#6a5687","#9e5b3d","#4f7a8c"];
 
 function drawFrame(canvas, ctx, points, snapshot) {
   const n = points.length / 2;
   const W = canvas.width, H = canvas.height;
 
-  ctx.fillStyle = "#fafafa";
+  ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, W, H);
 
   if (!points) return;
@@ -330,7 +333,7 @@ function drawFrame(canvas, ctx, points, snapshot) {
     path.arc(x, y, radius, 0, 2 * Math.PI);
   }
   for (const [c, path] of pathByCluster) {
-    ctx.fillStyle = c === -1 ? "#9ca3af" : PALETTE[c % PALETTE.length];
+    ctx.fillStyle = c === -1 ? "#9d9d92" : PALETTE[c % PALETTE.length];
     ctx.fill(path);
   }
 
@@ -344,10 +347,10 @@ function drawFrame(canvas, ctx, points, snapshot) {
     const color = PALETTE[c % PALETTE.length];
     const r = 9;
 
-    // white halo for contrast
+    // paper halo for contrast
     ctx.beginPath();
     ctx.arc(cx, cy, r + 2, 0, 2 * Math.PI);
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillStyle = "rgba(255,255,248,0.78)";
     ctx.fill();
 
     // colored circle
@@ -356,8 +359,8 @@ function drawFrame(canvas, ctx, points, snapshot) {
     ctx.fillStyle = color;
     ctx.fill();
 
-    // X cross in white
-    ctx.strokeStyle = "#ffffff";
+    // X cross in paper
+    ctx.strokeStyle = PAPER;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(cx - 5, cy - 5); ctx.lineTo(cx + 5, cy + 5);
@@ -379,15 +382,15 @@ function drawInertia(iCanvas, iCtx, snapshots, currentFrame) {
   const total = snapshots.length;
 
   // background
-  iCtx.fillStyle = "#fafafa";
+  iCtx.fillStyle = PAPER;
   iCtx.fillRect(0, 0, W, H);
-  iCtx.strokeStyle = "#e5e7eb";
+  iCtx.strokeStyle = "#dcdcd4";
   iCtx.lineWidth = 1;
   iCtx.strokeRect(pad.left, pad.top, iW, iH);
 
   // axes labels
-  iCtx.fillStyle = "#6b7280";
-  iCtx.font = "10px 'SF Mono', Menlo, Consolas, monospace";
+  iCtx.fillStyle = "#595959";
+  iCtx.font = "10px 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace";
   iCtx.textAlign = "right";
   iCtx.fillText(maxInertia.toFixed(2), pad.left - 3, pad.top + 9);
   iCtx.fillText("0", pad.left - 3, pad.top + iH);
@@ -401,7 +404,7 @@ function drawInertia(iCanvas, iCtx, snapshots, currentFrame) {
   if (framesToDraw < 2) return;
 
   iCtx.beginPath();
-  iCtx.strokeStyle = "#0ea5e9";
+  iCtx.strokeStyle = "#b7410e";
   iCtx.lineWidth = 2;
   for (let f = 0; f < framesToDraw; f++) {
     const x = pad.left + (f / (total - 1)) * iW;
@@ -416,7 +419,7 @@ function drawInertia(iCanvas, iCtx, snapshots, currentFrame) {
   const fy = pad.top + iH - (snapshots[framesToDraw - 1].inertia / maxInertia) * iH;
   iCtx.beginPath();
   iCtx.arc(fx, fy, 4, 0, 2 * Math.PI);
-  iCtx.fillStyle = "#0ea5e9";
+  iCtx.fillStyle = "#b7410e";
   iCtx.fill();
 }
 
@@ -553,10 +556,13 @@ function fitWithSteps() {
 
     const jsMs  = (t1js - t0js).toFixed(1);
     const ratio = (t1js - t0js) / Math.max(t1wasm - t0wasm, 0.01);
+    const verdict = ratio >= 1
+      ? `WASM ${ratio.toFixed(1)}× faster`
+      : `JS ${(1 / ratio).toFixed(1)}× faster — call overhead dominates at this size`;
     raceDiv.innerHTML =
       `<span class="rust">WASM: ${wasmMs} ms</span> · ` +
       `<span class="js">JS: ${jsMs} ms</span>` +
-      ` (${ratio.toFixed(1)}× faster)`;
+      ` (${verdict})`;
   }
 
   const convergenceNote = parsed.converged ? `converged in ${parsed.iterCount} iter` : `max ${parsed.iterCount} iter`;
