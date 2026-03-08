@@ -34,11 +34,13 @@ def test_jekyll_config_has_site_metadata():
 
 
 def test_assets_synced():
-    """Every PNG in results/ and GIF in results/animations/ must be mirrored under docs/assets/."""
-    src_pngs = sorted((REPO_ROOT / "results").glob("*.png"))
+    """Every SVG/PNG in results/ and GIF in results/animations/ must be mirrored under docs/assets/."""
+    src_images = sorted(
+        (REPO_ROOT / "results").glob("*.svg")
+    ) + sorted((REPO_ROOT / "results").glob("*.png"))
     src_gifs = sorted((REPO_ROOT / "results" / "animations").glob("*.gif"))
 
-    for src in src_pngs:
+    for src in src_images:
         mirror = DOCS / "assets" / "images" / src.name
         assert mirror.exists(), f"missing mirror for {src.name}"
 
@@ -61,9 +63,35 @@ def test_demo_page_references_wasm():
 
 
 def test_benchmark_page_names_cli_subprocess_scope():
-    """The benchmark page must not describe subprocess timing as fit-only timing."""
+    """The benchmark page must describe timing as the full CLI subprocess, not the
+    clustering kernel in isolation, and must qualify memory as a sampled process-RSS
+    estimate rather than a platform max-RSS reading.
+
+    The exact prose is allowed to evolve; these assertions pin the *claims*, not a
+    single literal sentence. Each claim is checked via a small set of phrases the
+    rewritten page actually uses.
+    """
     body = (DOCS / "benchmarks.md").read_text()
-    assert "including startup, CSV loading, the k sweep, and output CSV writing" in body
-    assert "sampled process-RSS estimate" in body
-    assert "not a platform max-RSS measurement" in body
-    assert "Excludes data loading" not in body
+    lower = body.lower()
+
+    # Claim 1: timing is the whole end-to-end CLI subprocess, not a function call.
+    assert "subprocess" in lower
+    assert "end to end" in lower or "end-to-end" in lower
+    # ...and that scope explicitly includes process startup plus disk I/O.
+    assert "process launch" in lower or "launch" in lower
+    assert "csv" in lower  # reading/writing the CSV is named as part of the timed span
+
+    # Claim 2: the timer wraps more than the clustering kernel — the page must say so.
+    assert "kernel" in lower
+    assert ("not the clustering kernel" in lower
+            or "rather than the cost of its inner loop" in lower
+            or "not just the kernel" in lower)
+
+    # Claim 3: memory is a sampled process-RSS estimate, not platform max-RSS.
+    assert "sampled process-rss estimate" in lower
+    assert "max-rss" in lower
+    assert "not a platform max-rss" in lower
+
+    # Regression guard: the page must not revert to claiming I/O is excluded.
+    assert "excludes data loading" not in lower
+    assert "fit-only" not in lower

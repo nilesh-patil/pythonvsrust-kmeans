@@ -2,85 +2,38 @@
 title: About
 ---
 
-<div class="site-content" markdown="1">
+One clustering algorithm, written four ways, with a harness to measure them against each other. The repository holds those four K-Means implementations and the tooling around them. The pure-NumPy version in [`src/python_impl/kmeans.py`](https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/python_impl/kmeans.py) is about 150 lines and exists to be read. The [Rust port](https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/src/rust_impl) is a faithful translation of it, a single CLI binary with an opt-in Rayon parallel path behind a flag. The [scikit-learn wrapper](https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/sklearn_impl/kmeans.py) is a thin shim over `sklearn.cluster.KMeans` that stands in for the production answer. And the [WASM crate](https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/src/wasm_impl) compiles the same Rust math to a 26.5 KB browser module, which is what powers the live demo. `runner.py` ties them together: it runs each as a subprocess, times it end to end, and records runtime, memory, CPU, and clustering quality into one CSV.
 
-<span class="eyebrow">About</span>
+## Toolchain
 
-# About this project
+Pixi pins both toolchains so the benchmark is reproducible: Rust 1.87 and Python 3.11. On the Python side the work leans on NumPy, pandas, scikit-learn, matplotlib, Plotly, pytest, and psutil. On the Rust side it's clap, rand, csv, rayon, and wasm-bindgen. The site is plain Jekyll served straight from `docs/` by GitHub Pages with no build step, set in Newsreader with JetBrains Mono for code, math rendered by KaTeX, and no JavaScript framework anywhere except the demo's own module.
 
-<p style="font-size: 1.15rem; color: var(--charcoal); max-width: 60ch;">
-<code>pythonvsrust-kmeans</code> started as a single question: <em>how much speed do you actually gain by porting a textbook K-Means from Python to Rust, and how much does that gain hold up against scikit-learn's industrial-strength C-backed implementation?</em>
-</p>
+## What I'd do differently
 
-## What's in the repo
+Two things, both of which the [parallelism page]({{ '/parallel/' | relative_url }}) explains in more detail. The first is the data layout. Storing each row as `DataPoint { id: String, features: Vec<f64> }` means a vector of pointer-chasing structs, and the distance kernel pays for that in cache misses. A flat `n × d` matrix of `f64` would be friendlier to both the prefetcher and to Rayon, and it would probably do more for the parallel speedup than any amount of thread tuning. The second is the benchmark grid: the CLI fits every \\(k\\) from 1 to k_max, so most fits are tiny and Rayon's setup cost dominates them. Measuring a single large fit alongside the sweep would give the parallel path a fair test instead of burying it in startup overhead.
 
-<div class="feature-grid">
-  <div class="card">
-    <h5>Pure-NumPy K-Means</h5>
-    <p><a href="https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/python_impl/kmeans.py">src/python_impl/kmeans.py</a> — the readable reference.</p>
-  </div>
-  <div class="card">
-    <h5>Rust K-Means</h5>
-    <p><a href="https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/src/rust_impl">src/rust_impl/</a> — single-threaded CLI binary, with opt-in Rayon parallel path.</p>
-  </div>
-  <div class="card">
-    <h5>sklearn wrapper</h5>
-    <p><a href="https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/sklearn_impl/kmeans.py">src/sklearn_impl/kmeans.py</a> — thin wrapper around <code>sklearn.cluster.KMeans</code>.</p>
-  </div>
-  <div class="card">
-    <h5>WASM K-Means</h5>
-    <p><a href="https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/src/wasm_impl">src/wasm_impl/</a> — separate Cargo crate compiled to a 26.5 KB browser module.</p>
-  </div>
-</div>
+I'd also like to run the seeding ablation I keep gesturing at, comparing single-start against best-of-N restarts, rather than holding everything to one start for fairness. That's a different study, and an honest one would be its own page.
 
-## Reproducing the site locally
+## How to reproduce it
+
+Everything runs through pixi. Install the environment, build the Rust binary, run the suite, and rebuild the derived artifacts:
 
 ```bash
-# Python + Rust toolchains via Pixi
 pixi install
 pixi run build-rust
 
-# Run the fresh paired benchmark (writes results/benchmark_results_*.csv and labels)
-pixi run python src/run_current_benchmark_suite.py \
-  --output results/benchmark_results_20260609_112255.csv
+pixi run python src/run_current_benchmark_suite.py
 
-# Refresh derived artifacts
-pixi run python src/visualize_init_comparison.py
-pixi run python src/visualize_speedup_curve.py
-pixi run python src/visualize_memory_breakdown.py
-pixi run python src/visualize_quality_runtime_pareto.py
-pixi run python src/bench_parallel_scaling.py \
-  --n_sample_grid 1000,2000,4000,8000,16000,32000,64000,128000,256000 \
-  --n_features 32 --n_clusters 32 --k_max 32 --runs 3
-pixi run python src/visualize_parallel_scaling.py
-pixi run python src/animate_convergence.py
-pixi run python src/build_dashboard.py --input results/benchmark_results_20260609_112255.csv
+pixi run python src/build_dashboard.py
 pixi run python src/sync_assets.py
 
-# Build the WASM module
 cd src/wasm_impl && wasm-pack build --target web --out-dir ../../docs/wasm
 
-# Run the test suite
 pixi run test
 ```
 
-The site itself is served from the `docs/` directory by GitHub Pages — no CI build step is required.
-
-## Tools and libraries
-
-<div class="card-cream" markdown="1">
-<ul style="margin: 0; padding-left: 1.2rem;">
-  <li><strong>Python</strong>: NumPy, pandas, scikit-learn, matplotlib, Plotly, pytest, psutil.</li>
-  <li><strong>Rust</strong>: clap, rand, csv, rayon, wasm-bindgen.</li>
-  <li><strong>Site</strong>: Jekyll with the minima theme, Cormorant Garamond + Inter via Google Fonts, vanilla CSS, no JS frameworks.</li>
-  <li><strong>Environment</strong>: <a href="https://pixi.sh/">Pixi</a> pins both Python and Rust toolchains.</li>
-</ul>
-</div>
+The full reproduction recipe, including the figure and animation scripts, lives alongside the methodology on the [benchmarks page]({{ '/benchmarks/' | relative_url }}).
 
 ## Acknowledgements
 
-- Arthur, D. & Vassilvitskii, S. (2007). *k-means++: The advantages of careful seeding*.
-- The Rust `rayon` and `wasm-bindgen` teams for making the parallel and browser stories painless.
-- The design system applied to this site is a homage to the [Mistral AI](https://mistral.ai) visual language.
-
-</div>
+The k-means++ seeding and its \\(O(\log k)\\) guarantee are from Arthur and Vassilvitskii, "k-means++: The Advantages of Careful Seeding" (SODA 2007). Thanks to the Rayon and wasm-bindgen teams for making the parallel and in-browser stories nearly painless. Source for everything is on [GitHub](https://github.com/nilesh-patil/pythonvsrust-kmeans).

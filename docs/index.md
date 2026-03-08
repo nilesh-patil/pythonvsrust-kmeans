@@ -2,139 +2,58 @@
 title: Overview
 ---
 
-<section class="hero-titan">
-  <div>
-    <span class="eyebrow">A K-Means clustering study</span>
-    <h1>Four execution paths.<br>One measured workload.</h1>
-    <p class="lead">
-      Pure Python, hand-rolled Rust, Rayon-parallel Rust, and scikit-learn measured as end-to-end CLI k-sweeps. With a live in-browser WebAssembly demo of the Rust implementation.
-    </p>
-    <div class="hero-actions">
-      <a class="btn-primary" href="{{ '/demo/'       | relative_url }}">Try the live demo</a>
-      <a class="btn-ghost"   href="{{ '/benchmarks/' | relative_url }}">View benchmarks</a>
-    </div>
-  </div>
-  <div class="hero-art">
-    <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <defs>
-        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#d8d3cc" stroke-width="0.5"/>
-        </pattern>
-      </defs>
-      <rect width="400" height="400" fill="url(#grid)"/>
-      <!-- Cluster A -->
-      <g fill="#111111">
-        <circle cx="100" cy="120" r="5"/><circle cx="120" cy="100" r="5"/>
-        <circle cx="90" cy="140" r="5"/><circle cx="135" cy="125" r="5"/>
-        <circle cx="115" cy="145" r="5"/><circle cx="105" cy="105" r="5"/>
-        <circle cx="125" cy="155" r="5"/><circle cx="95" cy="115" r="5"/>
-      </g>
-      <!-- Cluster B -->
-      <g fill="#111111">
-        <circle cx="280" cy="110" r="5"/><circle cx="295" cy="130" r="5"/>
-        <circle cx="265" cy="125" r="5"/><circle cx="305" cy="105" r="5"/>
-        <circle cx="290" cy="150" r="5"/><circle cx="275" cy="95" r="5"/>
-        <circle cx="310" cy="140" r="5"/><circle cx="285" cy="135" r="5"/>
-      </g>
-      <!-- Cluster C -->
-      <g fill="#111111">
-        <circle cx="190" cy="280" r="5"/><circle cx="210" cy="290" r="5"/>
-        <circle cx="175" cy="275" r="5"/><circle cx="220" cy="270" r="5"/>
-        <circle cx="200" cy="305" r="5"/><circle cx="185" cy="295" r="5"/>
-        <circle cx="215" cy="305" r="5"/><circle cx="195" cy="265" r="5"/>
-      </g>
-      <!-- Centroids -->
-      <g stroke="#ff9900" stroke-width="2.5" fill="none">
-        <path d="M105,125 l16,0 M113,117 l0,16"/>
-        <path d="M283,125 l16,0 M291,117 l0,16"/>
-        <path d="M193,285 l16,0 M201,277 l0,16"/>
-      </g>
-      <!-- Voronoi-ish lines -->
-      <g stroke="#615e5b" stroke-width="1" fill="none" opacity="0.5">
-        <line x1="195" y1="0" x2="205" y2="200"/>
-        <line x1="0" y1="220" x2="400" y2="200"/>
-      </g>
-    </svg>
-  </div>
-</section>
-
-<div class="site-content" markdown="1">
-
-<span class="eyebrow">At a glance</span>
-
-<div class="stat-row">
-  <div class="card-stat">
-    <span class="stat-value">5.1×</span>
-    <span class="stat-label">Rust-Parallel over pure-Python - paired median speedup</span>
-  </div>
-  <div class="card-stat">
-    <span class="stat-value">0.61</span>
-    <span class="stat-label">MB / 1k samples - median Rust sampled RSS</span>
-  </div>
-  <div class="card-stat">
-    <span class="stat-value">1.00</span>
-    <span class="stat-label">Median ARI under single-start k-means++</span>
-  </div>
-  <div class="card-stat">
-    <span class="stat-value">648</span>
-    <span class="stat-label">Rows in the 2026-06-09 benchmark suite</span>
-  </div>
+<div class="epigraph" markdown="1">
+I wrote K-Means four times (pure-NumPy Python, hand-rolled serial Rust, the same Rust with a Rayon parallel path, and a thin wrapper over scikit-learn) and benchmarked all four as end-to-end command-line jobs on my laptop. Across 648 paired runs the serial Rust port clusters about as well as the others while running roughly four to five times faster than the Python reference and using a tenth of its memory. scikit-learn is the fastest thing here only at the very largest workload, and it pays for that speed in RAM. The Rayon parallel path tops out at a 1.32x speedup, and only on the biggest jobs.
 </div>
 
-<div class="card-cream-soft" markdown="1">
-**What was measured in the benchmark suite**
+<span class="newthought">The question</span> that started this was narrow and a little smug: how much do you actually gain by porting a textbook K-Means from Python to Rust? I had a guess. What I didn't have was a measurement I trusted, so I built one. Four implementations, one shared workload, and a benchmark harness that runs each implementation as a real subprocess from the command line rather than timing a function call in a warm interpreter. That choice matters, and I'll come back to it, because it's the difference between a microbenchmark and something closer to what you'd feel using the tool.
 
-| Field | Value |
-|---|---|
-| Source CSV | `benchmark_results_20260609_112255.csv` |
-| Workload | End-to-end CLI k-sweep, including process launch, CSV read, fitting k = 1..k_max, and output CSV writing |
-| Grid | Sample sizes 1k, 2k, 4k, 8k, 16k, 32k, 64k, 128k, and 256k across feature counts 2, 8, 32 and k_max values 8, 32 with three paired repeats |
-| Implementations | Python, scikit-learn, Rust, Rust-Parallel |
-| Initialization policy | Single-start k-means++ for all implementations; scikit-learn `n_init=1` |
-| Memory metric | Sampled process RSS polled every 10 ms, not platform max RSS |
-| Resource metrics | Wall time, CPU time, effective cores, sampled RSS, normalized throughput, and paired speedups |
-| Quality metrics | ARI/NMI use full ground-truth labels; expensive internal metrics are sampled at 10k rows for the largest workloads |
-</div>
+The four paths are deliberately matched. The pure-Python implementation is about 150 lines of NumPy and exists to be readable. The Rust port follows the same Lloyd's algorithm, line for line where it can. The parallel build is that same Rust binary with `--parallel --threads 0`, so the only thing that changes is whether the assignment and update steps fan out across cores. scikit-learn stands in for "the production answer," its clustering kernels compiled C underneath. Every run on every implementation uses k-means++ seeding with a single start, including scikit-learn at `n_init=1`, which keeps the comparison about implementation mechanics rather than restart luck.<label for="sn-init" class="sidenote-toggle">⊕</label><input type="checkbox" id="sn-init" class="sidenote-state"><span class="sidenote">scikit-learn defaults to ten restarts and keeps the best. Holding it to one start is the fair comparison here but understates what it does out of the box; a "best of N" policy would be a different study.</span>
 
-The current benchmark suite was generated on June 9, 2026. Each workload is generated from scratch and run through all four implementations before medians are computed. The sample axis follows a log2 doubling sequence from 1k through 256k rows.
+What I measured on each run is wall-clock time around the whole subprocess, sampled process memory polled every 10 ms while it runs, child-process CPU time, and the clustering quality of the result against the ground-truth labels I generated the data from. The grid is a log2 doubling sequence from 1,000 to 256,000 rows, crossed with 2, 8, and 32 features and a k-sweep up to 8 or 32 clusters, three repeats each. The canonical numbers below all come from a single benchmark run, by way of an [auditing step]({{ '/benchmarks/' | relative_url }}) that is the only place I let myself quote figures from.
 
-## Runtime and resource use: Rust wins the matched CLI workload
+## Runtime: the port pays off, but read the workload
 
-![Fresh benchmark plot showing runtime, throughput, sampled memory, and quality for the paired 2026-06-09 run.](assets/images/benchmark_plots_20260609_112255.png)
+<figure class="figure-wide">
+  <img src="{{ '/assets/images/benchmark_plots_20260609_112255.svg' | relative_url }}" alt="Four-panel benchmark plot: runtime, throughput, sampled memory, and clustering quality across sample sizes for Python, scikit-learn, Rust, and Rust-Parallel.">
+  <figcaption>The two Rust lines sit nearly on top of each other — Rayon barely separates from serial — and both run well below the Python reference; scikit-learn starts expensive and only catches up at the far right, where its compiled kernels finally overtake hand-written Rust.</figcaption>
+</figure>
 
-Median CLI k-sweep runtime over the suite: Rust-Parallel 0.197 s, Rust 0.201 s, Python 0.806 s, and scikit-learn 1.843 s. On paired workload rows, Rust-Parallel has a 5.1x median speedup over pure Python and serial Rust has a 4.5x median speedup.
+Over the whole suite the median CLI runtime is 0.197 s for Rust-Parallel, 0.201 s for serial Rust, 0.806 s for Python, and 1.843 s for scikit-learn. The unpaired medians flatter Rust a little because the grid mixes easy and hard rows, so the number I actually trust is the paired one: matched row for matched row, serial Rust is 4.5x faster than Python at the median and Rust-Parallel is 5.1x.<label for="sn-paired" class="sidenote-toggle">⊕</label><input type="checkbox" id="sn-paired" class="sidenote-state"><span class="sidenote">The paired medians come from dividing Python's wall time by each implementation's on the same dataset, repeat, and settings, then taking the median of those ratios. Means run higher (around 6.6x) because a few large rows pull them up.</span>
 
-At the largest workload, 256k samples x 32 features x k_max=32, scikit-learn is fastest at 15.36 s but uses 795 MB sampled RSS. Rust-Parallel takes 16.23 s at 190 MB, serial Rust takes 20.76 s at 194 MB, and pure Python takes 46.46 s at 924 MB.
+<figure>
+  <img src="{{ '/assets/images/speedup_curve.svg' | relative_url }}" alt="Speedup over pure Python against nominal workload, on log-log axes, for the three other implementations.">
+  <figcaption>Speedup over pure Python by matched workload. The Rust paths sit well above the baseline across the grid; scikit-learn only climbs past it at the largest, heaviest fits.</figcaption>
+</figure>
 
-The headline is about end-to-end CLI throughput, not isolated algorithm kernel time. Startup, CSV I/O, and writing all cluster columns for k = 1..k_max are included by design.
+That advantage is not uniform across scale, and the most honest way to see it is at the top of the grid. At 256k samples by 32 features with a sweep to k=32, scikit-learn is the fastest of the four at 15.36 s, but it sits at 795 MB of sampled RSS to get there. Rust-Parallel finishes in 16.23 s at 190 MB, serial Rust in 20.76 s at 194 MB, and Python trails at 46.46 s and 924 MB. So the story isn't "Rust beats everything everywhere." It's that Rust is fast and cheap, scikit-learn is fast and hungry, and Python is neither. The crossover where scikit-learn's compiled kernels overtake hand-written Rust shows up only once the workload is big enough to amortize its startup and overhead.
 
-## Memory: directional, not exact
+Everything here is end-to-end. The wall time includes process launch, reading the CSV off disk, fitting every k from 1 to k_max, and writing all the cluster columns back out. I left it that way on purpose, because that's the cost you pay when you actually run the tool, and it's where a lot of the Python tax lives.
 
-Median sampled RSS per 1 000 samples: Rust 0.61 MB, Rust-Parallel 0.73 MB, Python 7.41 MB, and scikit-learn 12.63 MB. Rust is still the clear memory leader in this measurement, but the metric is a 10 ms RSS poll of the process, not a platform max-RSS reading. Exact ratios should be read as directional.
+## Where the memory goes
 
-The Rust implementation is not a fully flat matrix layout. It stores rows as `DataPoint { id: String, features: Vec<f64> }`, so the current memory advantage comes from avoiding NumPy-style full distance matrices and Python object/runtime overhead, not from a perfectly contiguous `n x d` matrix representation.
+<figure>
+  <img src="{{ '/assets/images/memory_breakdown.svg' | relative_url }}" alt="Sampled RSS per thousand samples by implementation, with Rust lowest and scikit-learn highest.">
+  <figcaption>Sampled RSS normalized per thousand rows. Rust holds well under a megabyte; scikit-learn is the heaviest by a wide margin.</figcaption>
+</figure>
 
-## Quality: single-start k-means++ largely closes the gap
+Normalized to a thousand samples, the median sampled RSS is 0.61 MB for Rust, 0.73 MB for Rust-Parallel, 7.41 MB for Python, and 12.63 MB for scikit-learn. Rust is the clear memory leader and it isn't close. The caveat is in how that number is taken: it's a 10 ms poll of the process's resident set, not a platform max-RSS reading, so the exact ratios are directional rather than precise.<label for="sn-rss" class="sidenote-toggle">⊕</label><input type="checkbox" id="sn-rss" class="sidenote-state"><span class="sidenote">A 10 ms sampler can miss a brief allocation spike between polls. It's good enough to rank implementations and to trust an order-of-magnitude gap; I wouldn't defend the second decimal place.</span>
 
-![Quality–runtime Pareto](assets/images/quality_runtime_pareto.png)
+I want to be careful about why Rust wins here, because it's tempting to credit a clever layout I didn't write. The Rust path stores each row as `DataPoint { id: String, features: Vec<f64> }` — a vector of owned structs, not a flat contiguous matrix. The advantage comes from sidestepping NumPy's full distance matrices and the Python object and interpreter overhead, not from a perfectly packed `n × d` buffer. There's still memory left on the table in the data layout, which becomes the recurring theme on the parallelism page.
 
-Median ARI is 1.00 for all four implementations on the suite. Mean ARI still shows a small gap: scikit-learn 0.999, Python 0.980, and both Rust paths 0.974. That residual comes from occasional single-start misses, not a systematic mismatch between serial and parallel Rust; those two paths produce identical quality metrics. Internal quality metrics for the largest workloads use a deterministic 10k-row sample to avoid quadratic silhouette-score cost on laptop hardware.
+## Quality holds up
 
-Because the suite uses k-means++ and `n_init=1` for scikit-learn, it compares implementation mechanics under a common single-start policy. A restart-policy ablation would be needed to compare "best of N starts" strategies.
+<figure>
+  <img src="{{ '/assets/images/quality_runtime_pareto.svg' | relative_url }}" alt="Quality-versus-runtime Pareto plot showing all four implementations clustering near-perfectly while differing in speed.">
+  <figcaption>Quality against runtime. Under single-start k-means++ all four implementations land at the top of the quality axis; the spread that's left is speed and memory.</figcaption>
+</figure>
 
-## Parallel Rust: useful only at larger scales
+The median ARI is 1.00 for all four implementations across the suite, which is the result I most wanted to verify before quoting any speedups: the speed numbers only mean something if every implementation is solving the same problem correctly.<label for="sn-ari" class="sidenote-toggle">⊕</label><input type="checkbox" id="sn-ari" class="sidenote-state"><span class="sidenote">ARI, the adjusted Rand index, measures agreement between two labelings corrected for chance: 1.0 is identical, 0 is what you'd expect from random labels. Defined more carefully on the algorithms page.</span> The mean ARI keeps a small gap (scikit-learn at 0.999, Python at 0.980, both Rust paths at 0.974), and that residual is occasional single-start misses, not a systematic flaw. Serial and parallel Rust share the same clustering math and produce bit-identical quality on paired rows, which is exactly what I'd want from a parallelization that's only supposed to change the schedule, not the answer.
 
-In the balanced suite, Rust-Parallel is slightly faster than serial Rust by median wall time: 0.197 s vs 0.201 s. The companion Rust-only thread sweep spans 1k through 256k rows at 32 features and `k_max=32`; the best observed speedup is 1.32x at 256k rows, while 8+ threads are a regression on some small slices.
+Because every run uses k-means++ and a single start, this compares the implementations under a common policy. It does not tell you who wins a "best of ten restarts" contest, which is the regime scikit-learn is tuned for. That would be a separate ablation, and an interesting one.
 
-Two changes would likely shift the cross-over down: a genuinely flat data matrix and a benchmark grid that distinguishes one large `k = k_max` fit from many small fits in the CLI sweep. Until those land, the parallel binary is a useful experiment rather than the default path.
+## Where parallelism stops paying off
 
-<div class="cta-strip">
-  <h2>Open the live demo.</h2>
-  <p>Generate two-moons data, watch Lloyd's algorithm fail in real time, then try the same data with k-means++ — all in your browser.</p>
-  <div class="hero-actions" style="justify-content: center;">
-    <a class="btn-primary" href="{{ '/demo/' | relative_url }}">Open the live demo</a>
-    <a class="btn-ghost"   href="https://github.com/nilesh-patil/pythonvsrust-kmeans">Star on GitHub</a>
-  </div>
-</div>
+Across the balanced suite Rust-Parallel edges serial Rust by median wall time, 0.197 s against 0.201 s, which is close to a rounding error. The dedicated thread sweep, using the same binary on 32 features and k_max=32 from 1k to 256k rows, tells the real story: the best speedup I see is 1.32x at 256k rows, and on the small slices eight or more threads are an outright regression. Lloyd's iterates serially even when each iteration parallelizes, the pointer-chasing data layout fights the cache, and the CLI's many small per-k fits each pay Rayon's setup cost. Two changes would move the crossover: a genuinely flat data matrix, and a benchmark that distinguishes one large k=k_max fit from a pile of tiny ones. Until then the parallel binary is an experiment I keep around, not the default I reach for.
 
-</div>
+If you'd rather watch the algorithm than read about it, the [live demo]({{ '/demo/' | relative_url }}) runs the Rust K-Means in your browser via WebAssembly: generate two-moons data, watch a random start bisect them, then try k-means++. The full methodology, the grid, and how to reproduce every number live on the [benchmarks page]({{ '/benchmarks/' | relative_url }}).
