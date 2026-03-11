@@ -83,7 +83,7 @@ Points, clusters, max iterations, and speed do what they say. Init switches betw
 
 ## What's running underneath
 
-Run K-Means calls `kmeans_fit_steps(xs, n, d, k, max_iter, seed, use_kpp)`, exported from `kmeans_wasm.js` and built from [`src/wasm_impl/src/lib.rs`](https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/wasm_impl/src/lib.rs). It returns one flat `Float32Array` holding a header and a snapshot of every Lloyd's iteration, so the animation is just a replay of states the Rust code already computed. The typed array crosses the JS-to-WASM boundary without a copy, thanks to `wasm-bindgen`'s typed-array support, which is part of why the race comes out the way it does.
+Run K-Means calls `kmeans_fit_steps(xs, n, d, k, max_iter, seed, use_kpp)`, exported from `kmeans_wasm.js` and built from [`src/wasm_impl/src/lib.rs`](https://github.com/nilesh-patil/bench-kmeans-rust/blob/master/src/wasm_impl/src/lib.rs). It returns one flat `Float32Array` holding a header and a snapshot of every Lloyd's iteration, so the animation is just a replay of states the Rust code already computed. The typed array crosses the JS-to-WASM boundary without a copy, thanks to `wasm-bindgen`'s typed-array support, which is part of why the race comes out the way it does.
 
 The module is built with a single command:
 

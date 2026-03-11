@@ -53,7 +53,7 @@ A small `src/sync_assets.py` script copies new artifacts into `docs/assets/` and
 - `pytest tests/test_docs_site.py -v` — green.
 - `wasm-pack build` succeeds; `docs/wasm/` is committed.
 - Opening `docs/index.md` previewed via Jekyll-compatible markdown renders correctly (we won't run a full Jekyll build locally — that's CI / GH Pages territory — but we verify markdown is valid).
-- GH Pages config in `_config.yml` sets `baseurl: /pythonvsrust-kmeans` so paths work when hosted.
+- GH Pages config in `_config.yml` sets `baseurl: /bench-kmeans-rust` so paths work when hosted.
 
 ## Out of scope
 - Custom theme work beyond a stylesheet override.

@@ -32,7 +32,7 @@ In code the loop is four lines:
 3. Update every centroid to the mean of its assigned points.
 4. If the labels (equivalently, the centroids) stopped moving, stop; otherwise loop.
 
-The pure-Python reference in [`src/python_impl/kmeans.py`](https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/python_impl/kmeans.py) is about 150 lines of NumPy and reads like that list. The [Rust port](https://github.com/nilesh-patil/pythonvsrust-kmeans/tree/master/src/rust_impl) is a faithful translation of the same four steps, with an opt-in Rayon path that changes only how steps two and three are scheduled.
+The pure-Python reference in [`src/python_impl/kmeans.py`](https://github.com/nilesh-patil/bench-kmeans-rust/blob/master/src/python_impl/kmeans.py) is about 150 lines of NumPy and reads like that list. The [Rust port](https://github.com/nilesh-patil/bench-kmeans-rust/tree/master/src/rust_impl) is a faithful translation of the same four steps, with an opt-in Rayon path that changes only how steps two and three are scheduled.
 
 ## Where it goes wrong: local optima and the wrong shape
 

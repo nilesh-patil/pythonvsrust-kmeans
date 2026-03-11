@@ -164,7 +164,7 @@ MPL_RC: dict[str, object] = {
     # serif stack above degrades gracefully when Newsreader is unavailable.
     "svg.fonttype": "none",
     # Stable element ids across regenerations keep diffs small and reviewable.
-    "svg.hashsalt": "pythonvsrust-kmeans",
+    "svg.hashsalt": "bench-kmeans-rust",
 }
 
 

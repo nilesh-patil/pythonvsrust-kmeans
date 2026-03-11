@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Project guidance for AI assistants and contributors working on `pythonvsrust-kmeans`.
+Project guidance for AI assistants and contributors working on `bench-kmeans-rust`.
 
 ## What this project is
 
@@ -80,4 +80,4 @@ cd docs && bundle exec jekyll serve   # if you have Jekyll installed
 # or simply open docs/index.md in a Markdown viewer
 ```
 
-`docs/_config.yml` pins `baseurl: /pythonvsrust-kmeans` for hosted paths to resolve correctly.
+`docs/_config.yml` pins `baseurl: /bench-kmeans-rust` for hosted paths to resolve correctly.

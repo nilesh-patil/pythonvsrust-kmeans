@@ -1,4 +1,4 @@
-# pythonvsrust-kmeans
+# bench-kmeans-rust
 
 I wrote K-Means four ways — pure-NumPy Python, hand-rolled serial Rust, the same
 Rust with a Rayon parallel path, and a thin wrapper over scikit-learn — and
@@ -12,9 +12,9 @@ its memory. scikit-learn is the fastest thing here only at the very largest
 workload, and it pays for that speed in RAM. The Rayon parallel path tops out at a
 1.32x speedup, and only on the biggest jobs.
 
-**Read the full write-up:** [the GitHub Pages site](https://nilesh-patil.github.io/pythonvsrust-kmeans/)
+**Read the full write-up:** [the GitHub Pages site](https://nilesh-patil.github.io/bench-kmeans-rust/)
 renders every number as a figure-centric technical essay, with the methodology, an
-interactive Plotly dashboard, and a [live in-browser demo](https://nilesh-patil.github.io/pythonvsrust-kmeans/demo/)
+interactive Plotly dashboard, and a [live in-browser demo](https://nilesh-patil.github.io/bench-kmeans-rust/demo/)
 that runs the Rust K-Means compiled to WebAssembly — six point distributions, step
 animation, and a WASM-vs-pure-JS speed race.
 
@@ -23,7 +23,7 @@ animation, and a WASM-vs-pure-JS speed race.
 ## What's in here
 
 ```
-pythonvsrust-kmeans/
+bench-kmeans-rust/
 ├── data/             # Auto-generated datasets (CSV/NPY); gitignored
 ├── notebooks/        # Exploratory analysis of the raw results
 ├── results/          # Benchmark CSVs, PNGs, GIFs, dashboard HTML
@@ -85,8 +85,8 @@ and Rust 1.87 toolchains for reproducibility.
 # install Pixi if you don't have it
 curl -fsSL https://pixi.sh/install.sh | bash
 
-git clone https://github.com/nilesh-patil/pythonvsrust-kmeans.git
-cd pythonvsrust-kmeans
+git clone https://github.com/nilesh-patil/bench-kmeans-rust.git
+cd bench-kmeans-rust
 pixi install
 ```
 
@@ -155,7 +155,7 @@ in the measurement on purpose, because that's the cost you actually pay.
 The final suite is 648 paired rows: a log2 sample sequence from 1,000 to
 256,000 rows, crossed with 2, 8, and 32 features and k_max values of 8 and 32,
 three repeats each. The methodology and every caveat are written up on the
-[benchmarks page](https://nilesh-patil.github.io/pythonvsrust-kmeans/benchmarks/).
+[benchmarks page](https://nilesh-patil.github.io/bench-kmeans-rust/benchmarks/).
 
 ## Lloyd's iterations, animated
 
@@ -168,5 +168,5 @@ panel); k-means++ usually picks one centroid per blob on the first try (second
 panel) and converges in two or three iterations. The right-hand panels are
 K-Means' two classic failures — moons get bisected and rings get pie-sliced —
 because the algorithm draws convex Voronoi boundaries and neither shape has any.
-The [algorithms page](https://nilesh-patil.github.io/pythonvsrust-kmeans/algorithms/)
+The [algorithms page](https://nilesh-patil.github.io/bench-kmeans-rust/algorithms/)
 works through why.

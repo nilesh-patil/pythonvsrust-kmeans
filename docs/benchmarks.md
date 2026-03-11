@@ -35,7 +35,7 @@ Every run uses k-means++ seeding with a single start, and scikit-learn is held t
 
 ## The interactive view
 
-The dashboard is rendered from the same run by [the dashboard build script](https://github.com/nilesh-patil/pythonvsrust-kmeans/blob/master/src/build_dashboard.py). It plots against nominal workload units, \\(n_{\text{samples}} \times n_{\text{features}} \times \sum_{k=1}^{k_{\max}} k\\), rather than connecting points by sample count alone, so that rows with different feature counts and k-sweeps aren't drawn as if they were the same workload.
+The dashboard is rendered from the same run by [the dashboard build script](https://github.com/nilesh-patil/bench-kmeans-rust/blob/master/src/build_dashboard.py). It plots against nominal workload units, \\(n_{\text{samples}} \times n_{\text{features}} \times \sum_{k=1}^{k_{\max}} k\\), rather than connecting points by sample count alone, so that rows with different feature counts and k-sweeps aren't drawn as if they were the same workload.
 
 <figure class="figure-wide">
   <iframe src="{{ '/dashboard/index.html' | relative_url }}"

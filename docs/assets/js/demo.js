@@ -7,7 +7,7 @@
  */
 
 import init, { init_panic_hook, kmeans_fit_steps } from
-  "/pythonvsrust-kmeans/wasm/kmeans_wasm.js";
+  "/bench-kmeans-rust/wasm/kmeans_wasm.js";
 
 // ---------------------------------------------------------------------------
 // RNG helpers

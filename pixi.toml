@@ -1,6 +1,6 @@
 [workspace]
 channels  = ["conda-forge"]
-name      = "pythonvsrust-kmeans"
+name      = "bench-kmeans-rust"
 platforms = ["osx-arm64"]
 version   = "0.1.0"
 

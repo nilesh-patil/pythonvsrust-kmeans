@@ -1,6 +1,6 @@
 title:       "K-Means, four ways"
 description: "I benchmarked K-Means in pure Python, serial Rust, Rayon-parallel Rust, and scikit-learn — measuring runtime, memory, and clustering quality on my own laptop."
-baseurl:     "/pythonvsrust-kmeans"
+baseurl:     "/bench-kmeans-rust"
 url:         ""
 
 markdown:    kramdown
