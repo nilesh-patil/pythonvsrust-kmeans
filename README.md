@@ -1,222 +1,172 @@
 # pythonvsrust-kmeans
 
-A comparative study of K-Means clustering implementations written in pure Python, serial Rust, Rayon-parallel Rust, and scikit-learn.
-The repository is structured so that you can generate synthetic data, run each implementation under identical scenarios, capture execution metrics and visualise the results.
+I wrote K-Means four ways — pure-NumPy Python, hand-rolled serial Rust, the same
+Rust with a Rayon parallel path, and a thin wrapper over scikit-learn — and
+benchmarked all four as end-to-end command-line jobs on my laptop. This repo holds
+the implementations, the harness that times them, and the figures and write-up that
+came out of it.
 
-> **🌐 Live site:** A companion [GitHub Pages site](https://nilesh-patil.github.io/pythonvsrust-kmeans/) renders all results as interactive Plotly dashboards and includes a [live, in-browser WebAssembly demo](https://nilesh-patil.github.io/pythonvsrust-kmeans/demo/) of the Rust K-Means with step-by-step Lloyd's-iteration animation, six point distributions (blobs, rings, moons, anisotropic, uniform, spiral), and a WASM-vs-pure-JS speed race.
+The short version: serial Rust clusters about as well as the others while running
+roughly four to five times faster than the Python reference and using a tenth of
+its memory. scikit-learn is the fastest thing here only at the very largest
+workload, and it pays for that speed in RAM. The Rayon parallel path tops out at a
+1.32x speedup, and only on the biggest jobs.
 
-![Fresh comparative benchmark: runtime, throughput, sampled memory, and quality](./results/benchmark_plots_20260609_112255.png)
+**Read the full write-up:** [the GitHub Pages site](https://nilesh-patil.github.io/pythonvsrust-kmeans/)
+renders every number as a figure-centric technical essay, with the methodology, an
+interactive Plotly dashboard, and a [live in-browser demo](https://nilesh-patil.github.io/pythonvsrust-kmeans/demo/)
+that runs the Rust K-Means compiled to WebAssembly — six point distributions, step
+animation, and a WASM-vs-pure-JS speed race.
 
-### Lloyd's iterations, animated
+![Comparative benchmark: runtime, throughput, sampled memory, and quality](./results/benchmark_plots_20260609_112255.svg)
 
-| random init | k-means++ init | pathological random seed | two moons (k-means fails) | concentric rings (k-means fails) |
-|---|---|---|---|---|
-| ![random](./results/animations/convergence_random.gif) | ![k-means++](./results/animations/convergence_kpp.gif) | ![pathological](./results/animations/convergence_pathological.gif) | ![moons](./results/animations/convergence_moons.gif) | ![circles](./results/animations/convergence_circles.gif) |
-
-Random init converges slowly when two centroids start in the same blob (third panel). k-means++ usually picks one centroid per blob on the first try (second panel), converging in 2–3 iterations. The right-hand panels show k-means' two classic failure modes — moons get bisected and rings get pie-sliced because k-means imposes Voronoi (convex-polytope) cluster boundaries.
-
-### k-means++ vs random initialization
-
-![init comparison](./results/init_comparison.png)
-
-### Parallel Rust K-Means (Rayon)
-
-![parallel scaling](./results/parallel_scaling.png)
-
-The Rust-only parallel sweep follows the same log2 sample progression as the main suite, from 1k through 256k rows at 32 features and `k_max=32`. The current data peaks at 1.32x over serial Rust on the 256k-row slice; the full sweep is saved as `results/parallel_scaling_n*.csv`, with `results/parallel_scaling.csv` kept as the 32k compatibility slice.
-
----
-
-## 📁 Directory structure
+## What's in here
 
 ```
 pythonvsrust-kmeans/
+├── data/             # Auto-generated datasets (CSV/NPY); gitignored
+├── notebooks/        # Exploratory analysis of the raw results
+├── results/          # Benchmark CSVs, PNGs, GIFs, dashboard HTML
+│   ├── animations/   # Lloyd's-iteration GIFs
+│   └── dashboards/   # Interactive Plotly HTML
 │
-├── data/                # Auto-generated datasets (CSV/NPY) used in the benchmarks
-├── notebooks/           # Jupyter notebooks used to explore data and analyse results
-├── results/             # Benchmark CSVs, PNGs, GIFs, dashboard HTML
-│   ├── animations/      # Lloyd's-iteration GIFs
-│   └── dashboards/      # Interactive Plotly HTML
+├── docs/             # Jekyll site, served straight from here by GitHub Pages
+│   ├── _config.yml   # Site config (baseurl, theme)
+│   ├── _layouts/     # Page layouts
+│   ├── assets/       # Mirrored PNGs/GIFs, CSS, demo JS
+│   ├── wasm/         # Rust compiled to WebAssembly + JS glue
+│   └── *.md          # Pages: index, algorithms, parallel, benchmarks, demo, about
 │
-├── docs/                # Jekyll GitHub Pages site (served from here)
-│   ├── _config.yml      # Site config (theme=minima, baseurl)
-│   ├── _layouts/        # Page layouts
-│   ├── assets/          # Mirrored PNGs, GIFs, CSS
-│   ├── wasm/            # Compiled Rust → WebAssembly module + JS glue
-│   └── *.md             # Site pages (index, algorithms, parallel, …)
+├── specs/            # Spec-Driven Development docs, one per feature
+├── tests/            # pytest suite (init, animations, metrics, site, bench)
 │
-├── specs/               # Spec-Driven Development docs, one per feature
-├── tests/               # pytest suite (init, animations, metrics, site)
-│
-├── src/                 # Source code for the experiment
-│   ├── generate_data.py            # Synthetic datasets + ground-truth labels (.npy)
-│   ├── animate_convergence.py      # Lloyd's-iteration GIF generator
+├── src/
+│   ├── generate_data.py            # Synthetic blobs + ground-truth labels
+│   ├── animate_convergence.py      # Lloyd's-iteration GIFs
 │   ├── visualize_init_comparison.py
 │   ├── visualize_parallel_scaling.py
 │   ├── bench_parallel_scaling.py   # Rust thread-count sweep
 │   ├── build_dashboard.py          # Interactive Plotly dashboard
+│   ├── analysis_audit.py           # Audited source for every quoted figure
+│   ├── viz_style.py                # Shared chart styling: colors + display names
 │   ├── sync_assets.py              # Mirror results/ into docs/assets/
-│   ├── python_impl/     # Pure-Python K-Means (random + k-means++)
-│   ├── rust_impl/       # Rust CLI binary + lib (serial + Rayon-parallel)
-│   ├── sklearn_impl/    # Thin sklearn wrapper
-│   └── wasm_impl/       # WebAssembly build of Rust K-Means
+│   ├── python_impl/                # Pure-Python K-Means (random + k-means++)
+│   ├── rust_impl/                  # Rust CLI binary + lib (serial + Rayon)
+│   ├── sklearn_impl/               # Thin sklearn wrapper
+│   └── wasm_impl/                  # WebAssembly build of the Rust K-Means
 │
-├── runner.py            # Orchestrator: data gen + run each impl + capture metrics + ARI/NMI
-│
-├── pixi.toml           # Pixi dependency management configuration
-├── pixi.lock           # Lock file for reproducible environments
-├── .gitignore          # Standard Git exclusions
-└── README.md           # You are here ✅
+├── runner.py         # Orchestrator: data gen, run each impl, capture metrics
+├── pixi.toml         # Pixi dependency + task config
+└── pixi.lock         # Lock file for reproducible environments
 ```
 
----
+## The four implementations
 
-## 🚀 Getting Started
+The paths are deliberately matched so the comparison is about mechanics, not
+algorithm choice. Every run uses k-means++ seeding with a single start, including
+scikit-learn at `n_init=1`.
 
-### Prerequisites
+- **Python** (`src/python_impl/kmeans.py`) — about 150 lines of NumPy that mirror
+  the textbook algorithm with no low-level tricks. It exists to be read.
+- **Rust** (`src/rust_impl`) — a faithful translation of the same Lloyd's
+  algorithm, a single CLI binary with an opt-in Rayon parallel path behind
+  `--parallel --threads 0`. Called from Python as a subprocess so timing and
+  memory are measured from the outside.
+- **scikit-learn** (`src/sklearn_impl/kmeans.py`) — a thin shim over
+  `sklearn.cluster.KMeans`, standing in for the production answer with its
+  compiled C kernels underneath.
 
-This project uses [Pixi](https://pixi.sh/) for dependency management, which provides a reproducible environment across different machines.
+## Running it
 
-1. **Install Pixi** (if not already installed):
-   ```bash
-   curl -fsSL https://pixi.sh/install.sh | bash
-   ```
+Everything runs through [Pixi](https://pixi.sh/), which pins both the Python 3.11
+and Rust 1.87 toolchains for reproducibility.
 
-2. **Clone the repository**:
-   ```bash
-   git clone https://github.com/nilesh-patil/pythonvsrust-kmeans.git
-   cd pythonvsrust-kmeans
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pixi install
-   ```
-
-### Running the benchmarks
-
-1. **Generate synthetic datasets**:
-   ```bash
-   pixi run python src/generate_data.py
-   ```
-
-2. **Run the full benchmark suite**:
-   ```bash
-   pixi run python runner.py
-   ```
-
-3. **View results**:
-   Results are saved in the `results/` directory as CSV files and visualization plots.
-
-> **Four rows per matched workload.** Each benchmark cell produces result rows for
-> `python`, `sklearn`, `rust` (serial), and `rust_parallel` (Rayon). The runner can
-> repeat each cell with paired dataset/algorithm seeds, records wall time, CPU time,
-> effective cores, sampled RSS, normalized throughput, ARI/NMI, and paired speedups,
-> then feeds those metrics into the dashboard and static figures. Implementation
-> colors and symbols are centralized in `src/viz_style.py`.
-
-### Using Pixi Tasks (Recommended)
-
-The project includes pre-defined pixi tasks that streamline common workflows:
-
-#### Quick Start
 ```bash
-# Run everything with one command (build Rust, generate data, run benchmarks)
-pixi run run-all
+# install Pixi if you don't have it
+curl -fsSL https://pixi.sh/install.sh | bash
 
-# Or for a quick test with smaller datasets
-pixi run run-quick
+git clone https://github.com/nilesh-patil/pythonvsrust-kmeans.git
+cd pythonvsrust-kmeans
+pixi install
 ```
 
-#### Data Generation
+Build the Rust binary, then run the benchmark suite:
+
 ```bash
-pixi run generate-data      # Generate all default datasets
-pixi run generate-small     # Small dataset (1K samples)
-pixi run generate-medium    # Medium dataset (10K samples)
-pixi run generate-large     # Large dataset (100K samples)
+pixi run build-rust
+
+# the full orchestrated run
+pixi run python runner.py
+
+# or reproduce the exact suite behind the website's numbers
+pixi run python src/run_current_benchmark_suite.py
 ```
 
-#### Building
+Results land in `results/` as CSV files and figures. Each benchmark cell produces
+one row per implementation — `python`, `sklearn`, `rust` (serial), and
+`rust_parallel` (Rayon) — recording wall time, child-process CPU time, effective
+cores, sampled RSS, normalized throughput, ARI/NMI, and paired speedups. Chart
+colors and display names for every implementation are centralized in
+`src/viz_style.py`, shared across matplotlib, Plotly, and the figures.
+
+Rebuild the derived artifacts and check every quoted number:
+
 ```bash
-pixi run build-rust         # Build Rust implementation (release mode)
-pixi run build-rust-debug   # Build Rust implementation (debug mode)
+pixi run python src/build_dashboard.py
+pixi run python src/sync_assets.py
+
+# the single source of truth for every median, speedup, and quality figure
+pixi run python src/analysis_audit.py
 ```
 
-#### Testing Individual Implementations
+Build the in-browser demo from the same Rust math:
+
 ```bash
-pixi run test-python        # Test Python implementation
-pixi run test-rust          # Test Rust implementation
-pixi run test-sklearn       # Test scikit-learn implementation
+cd src/wasm_impl && wasm-pack build --target web --out-dir ../../docs/wasm
 ```
 
-#### Benchmarking
+### Common Pixi tasks
+
 ```bash
-pixi run benchmark          # Run default benchmark suite
-pixi run benchmark-quick    # Quick benchmark with fewer parameters
-pixi run benchmark-full     # Comprehensive benchmark (takes longer)
+pixi run run-all          # build Rust, generate data, run the suite
+pixi run run-quick        # the same on smaller datasets
+pixi run build-rust       # cargo build --release in src/rust_impl
+pixi run test             # full pytest run
+pixi run benchmark        # default benchmark suite
+pixi run generate-data    # all default datasets
+pixi run clean-all        # remove generated data and results
+pixi run help             # list every available task
 ```
 
-#### Utilities
-```bash
-pixi run clean-data         # Remove generated datasets
-pixi run clean-results      # Remove benchmark results
-pixi run clean-all          # Clean everything
-```
+## What gets measured
 
-#### Help
-```bash
-pixi run help               # List available pixi tasks
-```
+A run here is a full CLI invocation timed end to end, not a warm function call.
+The wall time includes process launch, reading the dataset off disk, fitting every
+`k` from 1 to k_max, and writing the cluster columns back out — startup and I/O are
+in the measurement on purpose, because that's the cost you actually pay.
 
----
+- **Runtime** — `time.perf_counter` around the subprocess.
+- **Memory** — `psutil.Process.memory_info().rss`, polled every 10 ms and reported
+  as the peak. This is a sampled process-RSS estimate, not a platform max-RSS
+  reading, so treat the ratios as directional rather than exact.
+- **Quality** — adjusted Rand index and NMI against the ground-truth labels the
+  data was generated from, plus the usual internal metrics.
 
-## 🎯 Project goal
+The final suite is 648 paired rows: a log2 sample sequence from 1,000 to
+256,000 rows, crossed with 2, 8, and 32 features and k_max values of 8 and 32,
+three repeats each. The methodology and every caveat are written up on the
+[benchmarks page](https://nilesh-patil.github.io/pythonvsrust-kmeans/benchmarks/).
 
-K-Means is one of the most widely-used clustering algorithms but its performance profile can vary dramatically depending on implementation language, data layout and compilation strategy.  The aim of this project is therefore **to quantify how hand-rolled Python, serial Rust, Rayon-parallel Rust, and industrial-strength scikit-learn implementations behave under a matrix of realistic workloads**.
+## Lloyd's iterations, animated
 
-The comparison focuses on three axes:
+| random init | k-means++ init | pathological seed | two moons | concentric rings |
+|---|---|---|---|---|
+| ![random](./results/animations/convergence_random.gif) | ![k-means++](./results/animations/convergence_kpp.gif) | ![pathological](./results/animations/convergence_pathological.gif) | ![moons](./results/animations/convergence_moons.gif) | ![circles](./results/animations/convergence_circles.gif) |
 
-1. **Runtime** - end-to-end CLI subprocess wall time, including CSV loading, fitting every `k` from 1 to `k_max`, output CSV writing and process overhead.
-2. **Memory usage** - sampled process resident set size (RSS) while the CLI runs, polled every 10 ms. This is not a platform max-RSS measurement.
-3. **Result quality** - inertia, internal clustering metrics, and ground-truth ARI/NMI when generated labels are available.
-
-The current website refresh uses a paired log2 sample sequence from 1k through 256k rows. Every sample size covers feature counts 2, 8, and 32 with k_max values 8 and 32 over three paired repeats.
-
----
-
-## 🛠️ Implementation strategy
-
-1. **Synthetic data generation**  
-   A single source of truth (`src/generate_data.py`) produces repeatable Gaussian blobs so that each implementation receives identical input. Datasets are cached under `data/` using a hashed filename that encodes sample count, feature count, cluster count, seed, cluster standard deviation, cluster separation, and a short hash.
-
-2. **Algorithm implementations**
-   * **Pure Python (`src/python_impl/kmeans.py`)** – A straightforward NumPy-based reference that mirrors the textbook algorithm with no low-level optimisations. Serves as the baseline. Can be run as a CLI tool.
-   * **Rust (`src/rust_impl`)** – Serial and Rayon-parallel CLI paths that accept the dataset path, output path, and max cluster count. The binary is called from Python via `subprocess` so that timing/memory are captured from the shell. Build with `cargo build --release` in the `src/rust_impl` directory.
-   * **scikit-learn (`src/sklearn_impl/kmeans.py`)** – A thin wrapper that delegates to `sklearn.cluster.KMeans`, providing a mature C-accelerated yardstick. Also executable as a CLI tool.
-
-3. **Benchmark harness (`runner.py`)**
-   * Parses experiment parameters (either CLI flags or pre-defined defaults).
-   * Ensures the necessary datasets exist, generating them on the fly if required.
-   * Executes each implementation in isolation while recording subprocess runtime with Python's `time.perf_counter` and sampled RSS with `psutil.Process.memory_info`.
-   * Emits one suite-level `benchmark_results_<timestamp>.csv` into `results/`, with one row per implementation/workload/repeat plus paired resource and quality metrics.
-   * Writes per-implementation output CSVs while each subprocess runs, then uses the suite-level metrics file for the dashboard and static visualizations.
-
-4. **Analysis notebooks** [to-do] 
-   The `notebooks/` directory can be used for exploratory pivots of the raw results, including nominal-workload runtime curves, log2 resource scaling, throughput comparisons, sampled-RSS views, and quality/runtime frontiers.
-
----
-
-## 📦 Dependencies
-
-The project uses Pixi for dependency management, which handles both Python and Rust toolchains. Key dependencies include:
-
-- **Python 3.11**: Core language runtime
-- **NumPy & Pandas**: Data manipulation and numerical computing
-- **scikit-learn**: Reference K-Means implementation
-- **Matplotlib & Seaborn**: Visualization
-- **Rust toolchain**: For compiling the Rust implementation
-- **psutil**: Process monitoring for memory usage tracking
-
-All dependencies are specified in `pixi.toml` and locked in `pixi.lock` for reproducibility.
-
----
+A random start converges slowly when two centroids land in the same blob (third
+panel); k-means++ usually picks one centroid per blob on the first try (second
+panel) and converges in two or three iterations. The right-hand panels are
+K-Means' two classic failures — moons get bisected and rings get pie-sliced —
+because the algorithm draws convex Voronoi boundaries and neither shape has any.
+The [algorithms page](https://nilesh-patil.github.io/pythonvsrust-kmeans/algorithms/)
+works through why.

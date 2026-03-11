@@ -38,7 +38,7 @@ data/                  # Generated datasets + _labels.npy (gitignored)
 - **`rust`** → "Rust" (serial Lloyd's via the CLI binary)
 - **`rust_parallel`** → "Rust - Parallel" (Rayon-backed; same binary, `--parallel --threads 0`)
 
-The runner emits separate rows for `rust` and `rust_parallel`; the dashboard renders both side by side. Implementation-name → color and display-name maps live in `src/build_dashboard.py` (`IMPL_COLORS`, `DISPLAY_NAMES`) and are mirrored in `runner.py`'s `generate_plots()` for cross-artifact consistency.
+The runner emits separate rows for `rust` and `rust_parallel`; the dashboard renders both side by side. Implementation-name → color and display-name maps live in `src/viz_style.py` (`IMPL_COLORS`, `DISPLAY_NAMES`), which `runner.py`, `src/build_dashboard.py`, and every `src/visualize_*.py` script import for cross-artifact consistency.
 
 ## Dev workflow
 
