@@ -51,7 +51,7 @@ So assignment is a map, update is a reduce, and the empty-cluster handling (rese
 
 <figure>
   <img src="{{ '/assets/images/parallel_scaling.svg' | relative_url }}" alt="Parallel speedup versus thread count across sample sizes, rising toward 1.3x only at the largest workloads.">
-  <figcaption>Serial-relative speedup from the Rust thread sweep on fresh n × 32-feature datasets at k_max=32. The gain is noise or worse on small slices and tops out around 1.3x at the largest.</figcaption>
+  <figcaption>Serial-relative speedup from the Rust thread sweep on fresh n × 16-feature datasets (16 true clusters) at k_max=8. The gain is noise or worse on small slices and tops out around 1.3x at the largest.</figcaption>
 </figure>
 
 The thread sweep runs the same binary across the suite's log2 sample sequence, 1k through 256k rows, and records each slice alongside the main results. The picture is consistent and modest:
